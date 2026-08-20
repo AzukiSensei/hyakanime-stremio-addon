@@ -7,7 +7,7 @@ const {
   explore,
   getAnime,
   getAnimeStats,
-  hydrateExploreResults
+  getRateLimitState
 } = require("./hyakanime");
 
 const {
@@ -203,19 +203,46 @@ function matchesFilter(anime, filter, wantedType) {
   return true;
 }
 
-function hasFilterData(anime, filter) {
-  if (!anime?.type) return false;
-  if (filter.status && anime?.status == null) return false;
+function normalizeRawType(anime) {
+  const raw = String(anime?.type || "").trim().toLowerCase();
 
-  if (filter.year || filter.season) {
-    const hasStart =
-      anime?.start?.year != null &&
-      (anime?.start?.month != null || anime?.season != null);
-    if (!hasStart) return false;
+  if (raw.includes("movie") || raw.includes("film")) return "movie";
+  if (raw) return "series";
+
+  // /explore does not always expose type. Default to series for unknown rows;
+  // movie catalog will only keep explicit movies to avoid false positives.
+  return "unknown";
+}
+
+function matchesExploreFilter(anime, filter, wantedType) {
+  const rawType = normalizeRawType(anime);
+
+  if (wantedType === "movie") {
+    if (rawType !== "movie") return false;
+  } else {
+    if (rawType === "movie") return false;
   }
 
-  if (filter.genre && !Array.isArray(anime?.genre)) return false;
+  if (filter.status && anime?.status != null) {
+    if (Number(anime.status) !== filter.status) return false;
+  }
 
+  if (filter.year && anime?.start?.year != null) {
+    if (Number(anime.start.year) !== filter.year) return false;
+  }
+
+  if (filter.season) {
+    const season = deriveSeason(anime);
+    if (season && season !== filter.season) return false;
+  }
+
+  if (filter.genre && Array.isArray(anime?.genre)) {
+    const genres = anime.genre.map(normalizeGenre);
+    if (!genres.includes(normalizeGenre(filter.genre))) return false;
+  }
+
+  // Missing filter fields are not grounds to discard a Hyakanime result here.
+  // The catalog must remain Hyakanime-first and avoid /anime/:id storms.
   return true;
 }
 
@@ -224,38 +251,33 @@ async function collectHyakanimeCatalog({
   skip = 0,
   wantedType,
   filter = {},
-  pageSize = 30,
-  maxExplorePages = 20
+  pageSize = 20,
+  maxExplorePages = 6
 }) {
   const targetCount = skip + pageSize;
   const matches = [];
   const seen = new Set();
 
   for (let page = 1; page <= maxExplorePages && matches.length < targetCount; page += 1) {
-    const raw = await explore({ search, page });
+    let raw;
+
+    try {
+      raw = await explore({ search, page });
+    } catch (error) {
+      if (String(error?.message || "").startsWith("HYAKANIME_RATE_LIMITED:")) {
+        console.warn(`[catalog] Hyakanime rate limited while reading page ${page}`);
+        break;
+      }
+      throw error;
+    }
 
     if (!Array.isArray(raw) || raw.length === 0) break;
 
-    const unique = raw.filter((item) => {
-      if (!item?.id || seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
+    for (const anime of raw) {
+      if (!anime?.id || seen.has(anime.id)) continue;
+      seen.add(anime.id);
 
-    const ready = [];
-    const missing = [];
-
-    for (const anime of unique) {
-      if (hasFilterData(anime, filter)) ready.push(anime);
-      else missing.push(anime);
-    }
-
-    const hydrated = missing.length
-      ? await hydrateExploreResults(missing, 12)
-      : [];
-
-    for (const anime of [...ready, ...hydrated]) {
-      if (matchesFilter(anime, filter, wantedType)) {
+      if (matchesExploreFilter(anime, filter, wantedType)) {
         matches.push(anime);
         if (matches.length >= targetCount) break;
       }
@@ -305,7 +327,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.7.0",
+    version: "1.7.1",
     name: "Hyakanime",
     description:
       "Catalogue Hyakanime pour Stremio, enrichi avec AniList.",
@@ -338,7 +360,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
         skip,
         wantedType,
         filter,
-        pageSize: 30
+        pageSize: 20
       });
 
       console.log(
@@ -435,12 +457,21 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     addon: "Hyakanime",
-    version: "1.7.0",
+    version: "1.7.1",
     catalogSource: "Hyakanime",
     enrichmentSource: "AniList",
     hyakanimeApi: API_BASE,
     aniListApi: ANILIST_API,
-    kitsuApi: KITSU_API
+    kitsuApi: KITSU_API,
+    hyakanimeRateLimit: getRateLimitState()
+  });
+});
+
+app.get("/debug/rate-limit", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    ok: true,
+    hyakanime: getRateLimitState()
   });
 });
 
