@@ -1,89 +1,45 @@
-# Hyakanime Stremio Addon — v1.6.0
+# Hyakanime Stremio Addon — v1.7.0
 
-## Changements principaux
+## Performance
 
-### Catalogue Hyakanime élargi
+Hyakanime reste la source principale.
 
-Hyakanime reste la source canonique.
+L'addon n'hydrate plus systématiquement chaque ligne de `/explore` via
+`/anime/:id`. Il ne le fait que si le filtre actif nécessite une donnée absente.
 
-La collecte passe désormais jusqu'à 40 pages `/explore` et cherche jusqu'à
-50 résultats par requête Stremio avant de s'arrêter.
+Cela réduit fortement le temps de chargement des catalogues.
 
-Cela améliore fortement les filtres peu denses comme :
+## Images d'épisodes
 
-```text
-Summer 2026
-Winter 2025
-Fantasy
-Films
-```
-
-Le cache Hyakanime évite de refaire inutilement les mêmes requêtes de détail.
-
-### Enrichissement réel des saisons
-
-Après matching Hyakanime -> AniList :
-
-```text
-Hyakanime
-   ↓
-AniList
-   ↓ relations PREQUEL
-numéro de saison
-```
-
-Exemple :
-
-```text
-Solo Leveling Season 2
-→ PREQUEL Solo Leveling
-→ Saison 2 dans Stremio
-```
-
-### Vrais épisodes via MyAnimeList/Jikan
-
-AniList fournit `idMal`.
-
-L'addon utilise ensuite l'API Jikan :
+L'enrichissement épisode passe maintenant par Kitsu :
 
 ```text
 Hyakanime
 → AniList
 → idMal
-→ Jikan /anime/{malId}/episodes
+→ Kitsu mapping
+→ Kitsu episodes
 ```
 
-Quand Jikan possède les données, les épisodes gagnent :
+Kitsu peut fournir une miniature propre à chaque épisode, ainsi que :
 
-- vrai titre
+- titre
+- synopsis
 - date de diffusion
-- ordre d'épisode
+- durée
+- numéro d'épisode
 
-Les miniatures restent basées sur le `bannerImage` AniList ou l'image Hyakanime,
-car Jikan ne fournit pas systématiquement une miniature par épisode.
+Quand une miniature Kitsu manque, l'addon utilise la bannière AniList ou
+l'image Hyakanime en fallback.
 
-### Priorité des sources
+## Saisons
 
-```text
-Catalogue       Hyakanime
-ID              Hyakanime
-Titre           Hyakanime
-Synopsis        Hyakanime
-Poster          Hyakanime
-Genres          Hyakanime + AniList
-Banner          AniList
-Saison          AniList relations
-Épisodes        Hyakanime/AniList pour le nombre
-Titres épisodes Jikan/MAL
-Dates épisodes  Jikan/MAL
-```
+Le calcul récursif de saison AniList a été supprimé du chemin critique.
 
-## Variables
+Priorité :
 
-```text
-PORT=7000
-HYAKANIME_API_BASE=https://api-v5.hyakanime.fr
-CACHE_TTL_MS=300000
-ANILIST_CACHE_TTL_MS=900000
-JIKAN_CACHE_TTL_MS=3600000
-```
+1. numéro explicite dans le titre
+2. PREQUEL direct
+3. saison 1
+
+Cela évite plusieurs appels réseau séquentiels.

@@ -84,27 +84,22 @@ function mergeGenres(hyak, ani) {
 }
 
 function episodeTitle(row, episode) {
-  return (
-    row?.title ||
-    row?.title_romanji ||
-    row?.title_japanese ||
-    `Épisode ${episode}`
-  );
+  return row?.title || row?.titleJapanese || `Épisode ${episode}`;
 }
 
-function buildVideos(hyak, ani, jikanEpisodes = [], seasonNumber = 1) {
+function buildVideos(hyak, ani, episodeRows = [], seasonNumber = 1) {
   if (normalizeHyakanimeType(hyak) === "movie") return [];
 
   const total = Number(
     hyak?.NbEpisodes ||
     ani?.episodes ||
-    jikanEpisodes.length ||
+    episodeRows.length ||
     0
   );
 
   if (!Number.isFinite(total) || total <= 0) return [];
 
-  const thumbnail =
+  const fallbackThumbnail =
     ani?.bannerImage ||
     hyak?.banner ||
     hyak?.image ||
@@ -113,25 +108,28 @@ function buildVideos(hyak, ani, jikanEpisodes = [], seasonNumber = 1) {
 
   return Array.from({ length: Math.min(total, 2000) }, (_, index) => {
     const episode = index + 1;
-    const jikan = jikanEpisodes.find((row) => Number(row?.mal_id) === episode) ||
-      jikanEpisodes[index];
+
+    const row =
+      episodeRows.find((item) => Number(item?.number) === episode) ||
+      episodeRows.find((item) => Number(item?.relativeNumber) === episode) ||
+      episodeRows[index] ||
+      null;
 
     const released =
-      jikan?.aired && !Number.isNaN(Date.parse(jikan.aired))
-        ? new Date(jikan.aired).toISOString()
+      row?.airDate && !Number.isNaN(Date.parse(row.airDate))
+        ? new Date(row.airDate).toISOString()
         : undefined;
 
     return {
       id: `${hyakId(hyak.id)}:${seasonNumber}:${episode}`,
-      title: episodeTitle(jikan, episode),
-      season: seasonNumber,
+      title: episodeTitle(row, episode),
+      season: Number(row?.seasonNumber || seasonNumber || 1),
       episode,
       released,
-      thumbnail,
+      thumbnail: row?.thumbnail || fallbackThumbnail,
       overview:
-        jikan?.title
-          ? `${jikan.title}`
-          : `Épisode ${episode} de ${pickHyakanimeTitle(hyak)}.`
+        row?.synopsis ||
+        `Épisode ${episode} de ${pickHyakanimeTitle(hyak)}.`
     };
   });
 }
@@ -145,7 +143,7 @@ function toFullMeta(
 ) {
   const type = normalizeHyakanimeType(hyak);
   const seasonNumber = Number(enrichment?.seasonNumber || 1);
-  const jikanEpisodes = Array.isArray(enrichment?.episodes)
+  const episodeRows = Array.isArray(enrichment?.episodes)
     ? enrichment.episodes
     : [];
 
@@ -166,7 +164,7 @@ function toFullMeta(
   const totalEpisodes = Number(
     hyak?.NbEpisodes ||
     ani?.episodes ||
-    jikanEpisodes.length ||
+    episodeRows.length ||
     0
   );
 
@@ -203,7 +201,7 @@ function toFullMeta(
     meta.videos = buildVideos(
       hyak,
       ani,
-      jikanEpisodes,
+      episodeRows,
       seasonNumber
     );
   }

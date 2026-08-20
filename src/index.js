@@ -17,9 +17,9 @@ const {
 } = require("./anilist");
 
 const {
-  JIKAN_API,
-  getEpisodes: getJikanEpisodes
-} = require("./jikan");
+  KITSU_API,
+  getEpisodesByMalId
+} = require("./kitsu");
 
 const {
   parseHyakId,
@@ -203,13 +203,29 @@ function matchesFilter(anime, filter, wantedType) {
   return true;
 }
 
+function hasFilterData(anime, filter) {
+  if (!anime?.type) return false;
+  if (filter.status && anime?.status == null) return false;
+
+  if (filter.year || filter.season) {
+    const hasStart =
+      anime?.start?.year != null &&
+      (anime?.start?.month != null || anime?.season != null);
+    if (!hasStart) return false;
+  }
+
+  if (filter.genre && !Array.isArray(anime?.genre)) return false;
+
+  return true;
+}
+
 async function collectHyakanimeCatalog({
   search = "",
   skip = 0,
   wantedType,
   filter = {},
-  pageSize = 50,
-  maxExplorePages = 40
+  pageSize = 30,
+  maxExplorePages = 20
 }) {
   const targetCount = skip + pageSize;
   const matches = [];
@@ -226,11 +242,22 @@ async function collectHyakanimeCatalog({
       return true;
     });
 
-    const hydrated = await hydrateExploreResults(unique, 6);
+    const ready = [];
+    const missing = [];
 
-    for (const anime of hydrated) {
+    for (const anime of unique) {
+      if (hasFilterData(anime, filter)) ready.push(anime);
+      else missing.push(anime);
+    }
+
+    const hydrated = missing.length
+      ? await hydrateExploreResults(missing, 12)
+      : [];
+
+    for (const anime of [...ready, ...hydrated]) {
       if (matchesFilter(anime, filter, wantedType)) {
         matches.push(anime);
+        if (matches.length >= targetCount) break;
       }
     }
   }
@@ -278,7 +305,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.6.0",
+    version: "1.7.0",
     name: "Hyakanime",
     description:
       "Catalogue Hyakanime pour Stremio, enrichi avec AniList.",
@@ -311,7 +338,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
         skip,
         wantedType,
         filter,
-        pageSize: 50
+        pageSize: 30
       });
 
       console.log(
@@ -345,21 +372,25 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
       let seasonNumber = 1;
       let episodes = [];
+      let kitsuId = null;
 
       if (ani) {
-        seasonNumber = await deriveSeasonNumber(ani).catch(() => 1);
+        const [resolvedSeason, kitsu] = await Promise.all([
+          deriveSeasonNumber(ani, hyak).catch(() => 1),
+          ani.idMal
+            ? getEpisodesByMalId(ani.idMal).catch(() => ({ kitsuId: null, episodes: [] }))
+            : Promise.resolve({ kitsuId: null, episodes: [] })
+        ]);
 
-        if (ani.idMal) {
-          episodes = await getJikanEpisodes(
-            ani.idMal,
-            Number(hyak?.NbEpisodes || ani?.episodes || 0)
-          ).catch(() => []);
-        }
+        seasonNumber = resolvedSeason;
+        kitsuId = kitsu?.kitsuId || null;
+        episodes = Array.isArray(kitsu?.episodes) ? kitsu.episodes : [];
       }
 
       console.log(
         `[meta] hyakanime=${animeId} anilist=${ani?.id || "no-match"} ` +
-        `mal=${ani?.idMal || "none"} season=${seasonNumber} episodes=${episodes.length}`
+        `mal=${ani?.idMal || "none"} kitsu=${kitsuId || "none"} ` +
+        `season=${seasonNumber} episodes=${episodes.length}`
       );
 
       return {
@@ -404,12 +435,12 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     addon: "Hyakanime",
-    version: "1.6.0",
+    version: "1.7.0",
     catalogSource: "Hyakanime",
     enrichmentSource: "AniList",
     hyakanimeApi: API_BASE,
     aniListApi: ANILIST_API,
-    jikanApi: JIKAN_API
+    kitsuApi: KITSU_API
   });
 });
 

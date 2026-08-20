@@ -203,35 +203,44 @@ async function getMediaById(id) {
   return data?.Media || null;
 }
 
-async function deriveSeasonNumber(media) {
-  if (!media?.id) return 1;
+function seasonNumberFromText(...values) {
+  const text = values.filter(Boolean).join(" ");
 
-  let season = 1;
-  let current = media;
-  const seen = new Set([media.id]);
+  const patterns = [
+    /\bseason\s*(\d+)\b/i,
+    /\b(\d+)(?:st|nd|rd|th)\s+season\b/i,
+    /\bsaison\s*(\d+)\b/i,
+    /\bpart\s*(\d+)\b/i
+  ];
 
-  for (let depth = 0; depth < 12; depth += 1) {
-    const prequel = (current?.relations?.edges || []).find(
-      (edge) =>
-        edge?.relationType === "PREQUEL" &&
-        edge?.node?.id &&
-        !seen.has(edge.node.id) &&
-        edge?.node?.format !== "MOVIE"
-    );
-
-    if (!prequel) break;
-
-    season += 1;
-    seen.add(prequel.node.id);
-
-    try {
-      current = await getMediaById(prequel.node.id);
-    } catch {
-      break;
-    }
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = Number(match?.[1] || 0);
+    if (value >= 1 && value <= 20) return value;
   }
 
-  return season;
+  return null;
+}
+
+async function deriveSeasonNumber(media, hyak = null) {
+  const explicit = seasonNumberFromText(
+    hyak?.title,
+    hyak?.titleEN,
+    hyak?.romanji,
+    media?.title?.userPreferred,
+    media?.title?.english,
+    media?.title?.romaji
+  );
+
+  if (explicit) return explicit;
+
+  const directPrequel = (media?.relations?.edges || []).some(
+    (edge) =>
+      edge?.relationType === "PREQUEL" &&
+      edge?.node?.format !== "MOVIE"
+  );
+
+  return directPrequel ? 2 : 1;
 }
 
 module.exports = {
