@@ -1,0 +1,17 @@
+{
+  "name": "hyakanime-stremio-addon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Addon Stremio non officiel utilisant l'API publique Hyakanime V5 pour les catalogues et métadonnées anime.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10"
+  }
+}

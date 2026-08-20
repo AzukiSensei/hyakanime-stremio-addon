@@ -1,0 +1,11 @@
+services:
+  hyakanime-stremio:
+    build: .
+    container_name: hyakanime-stremio
+    restart: unless-stopped
+    environment:
+      PORT: 7000
+      HYAKANIME_API_BASE: https://api-v5.hyakanime.fr
+      CACHE_TTL_MS: 300000
+    ports:
+      - "7000:7000"
