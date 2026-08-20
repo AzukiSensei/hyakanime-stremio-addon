@@ -28,7 +28,7 @@ async function gql(query, variables = {}) {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      "User-Agent": "Hyakanime-Stremio-Addon/1.3"
+      "User-Agent": "Hyakanime-Stremio-Addon/1.4"
     },
     body: JSON.stringify({ query, variables }),
     signal: AbortSignal.timeout(12000)
@@ -40,7 +40,6 @@ async function gql(query, variables = {}) {
   }
 
   const payload = await response.json();
-
   if (payload.errors?.length) {
     throw new Error(payload.errors.map((e) => e.message).join("; "));
   }
@@ -80,6 +79,8 @@ async function getCatalog({
   seasonYear,
   format,
   search,
+  genre,
+  status,
   sort = ["POPULARITY_DESC"]
 } = {}) {
   const query = `
@@ -90,22 +91,19 @@ async function getCatalog({
       $seasonYear: Int,
       $format: MediaFormat,
       $search: String,
+      $genre: String,
+      $status: MediaStatus,
       $sort: [MediaSort]
     ) {
       Page(page: $page, perPage: $perPage) {
-        pageInfo {
-          total
-          currentPage
-          lastPage
-          hasNextPage
-          perPage
-        }
         media(
           type: ANIME,
           season: $season,
           seasonYear: $seasonYear,
           format: $format,
           search: $search,
+          genre: $genre,
+          status: $status,
           sort: $sort,
           isAdult: false
         ) {
@@ -122,6 +120,8 @@ async function getCatalog({
     seasonYear: seasonYear || null,
     format: format || null,
     search: search || null,
+    genre: genre || null,
+    status: status || null,
     sort
   });
 
@@ -133,19 +133,6 @@ async function getMedia(id) {
     query ($id: Int!) {
       Media(id: $id, type: ANIME) {
         ${MEDIA_FIELDS}
-        relations {
-          edges {
-            relationType(version: 2)
-            node {
-              id
-              type
-              format
-              season
-              seasonYear
-              title { romaji english native userPreferred }
-            }
-          }
-        }
       }
     }
   `;

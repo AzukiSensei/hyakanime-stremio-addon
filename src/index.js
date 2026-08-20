@@ -28,9 +28,29 @@ const DEFAULT_CONFIG = Object.freeze({
   includeSeries: true,
   includeMovies: true,
   showStats: true,
-  seasonalCatalogs: true,
   seasonYearsBack: 2
 });
+
+const BASE_GENRES = [
+  "Action",
+  "Adventure",
+  "Comedy",
+  "Drama",
+  "Ecchi",
+  "Fantasy",
+  "Horror",
+  "Mahou Shoujo",
+  "Mecha",
+  "Music",
+  "Mystery",
+  "Psychological",
+  "Romance",
+  "Sci-Fi",
+  "Slice of Life",
+  "Sports",
+  "Supernatural",
+  "Thriller"
+];
 
 const SEASONS = [
   ["WINTER", "Winter"],
@@ -59,10 +79,6 @@ function sanitizeConfig(input = {}) {
       typeof input.showStats === "boolean"
         ? input.showStats
         : DEFAULT_CONFIG.showStats,
-    seasonalCatalogs:
-      typeof input.seasonalCatalogs === "boolean"
-        ? input.seasonalCatalogs
-        : DEFAULT_CONFIG.seasonalCatalogs,
     seasonYearsBack:
       Number.isFinite(yearsBack)
         ? Math.max(0, Math.min(5, Math.floor(yearsBack)))
@@ -84,38 +100,52 @@ function decodeConfig(value) {
   }
 }
 
-function buildSeasonCatalogs(config) {
-  if (!config.seasonalCatalogs || !config.includeSeries) return [];
+function seasonalOptions(config) {
+  const currentYear = new Date().getUTCFullYear();
+  const values = [];
 
-  const year = new Date().getUTCFullYear();
-  const catalogs = [];
-
-  // Année courante + années précédentes demandées.
-  for (let y = year; y >= year - config.seasonYearsBack; y -= 1) {
-    for (const [season, label] of SEASONS) {
-      catalogs.push({
-        type: "series",
-        id: `anilist-series-${season.toLowerCase()}-${y}`,
-        name: `Séries — ${label} ${y}`,
-        extra: [
-          { name: "skip", isRequired: false },
-          { name: "search", isRequired: false }
-        ]
-      });
+  for (let year = currentYear; year >= currentYear - config.seasonYearsBack; year -= 1) {
+    for (const [, label] of SEASONS) {
+      values.push(`${label} ${year}`);
     }
   }
 
-  return catalogs;
+  return values;
 }
 
-function parseSeasonCatalogId(id) {
-  const match = /^anilist-series-(winter|spring|summer|fall)-(\d{4})$/.exec(id);
-  if (!match) return null;
+function genreOptions(config) {
+  return [
+    "Tout",
+    "En cours",
+    "À venir",
+    "Populaires",
+    "Tendances",
+    ...seasonalOptions(config),
+    ...BASE_GENRES
+  ];
+}
 
-  return {
-    season: match[1].toUpperCase(),
-    year: Number(match[2])
-  };
+function parseFilter(filter) {
+  if (!filter || filter === "Tout") return {};
+
+  if (filter === "En cours") return { status: "RELEASING" };
+  if (filter === "À venir") return { status: "NOT_YET_RELEASED" };
+  if (filter === "Populaires") return { sort: ["POPULARITY_DESC"] };
+  if (filter === "Tendances") return { sort: ["TRENDING_DESC"] };
+
+  const seasonMatch = /^(Winter|Spring|Summer|Fall)\s+(\d{4})$/.exec(filter);
+  if (seasonMatch) {
+    return {
+      season: seasonMatch[1].toUpperCase(),
+      seasonYear: Number(seasonMatch[2])
+    };
+  }
+
+  if (BASE_GENRES.includes(filter)) {
+    return { genre: filter };
+  }
+
+  return {};
 }
 
 async function findHyakanimeMatch(media) {
@@ -142,7 +172,7 @@ async function findHyakanimeMatch(media) {
         return await getAnime(match.id);
       }
     } catch {
-      // Enrichissement optionnel.
+      // Hyakanime is optional enrichment.
     }
   }
 
@@ -155,10 +185,15 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   if (config.includeSeries) {
     catalogs.push({
-      type: "series",
-      id: "anilist-series",
+      type: "hyakanime",
+      id: "hyakanime-series",
       name: "Séries",
       extra: [
+        {
+          name: "genre",
+          isRequired: false,
+          options: genreOptions(config)
+        },
         { name: "search", isRequired: false },
         { name: "skip", isRequired: false }
       ]
@@ -167,27 +202,35 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   if (config.includeMovies) {
     catalogs.push({
-      type: "movie",
-      id: "anilist-movies",
+      type: "hyakanime",
+      id: "hyakanime-movies",
       name: "Films",
       extra: [
+        {
+          name: "genre",
+          isRequired: false,
+          options: [
+            "Tout",
+            "Populaires",
+            "Tendances",
+            ...BASE_GENRES
+          ]
+        },
         { name: "search", isRequired: false },
         { name: "skip", isRequired: false }
       ]
     });
   }
 
-  catalogs.push(...buildSeasonCatalogs(config));
-
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.3.1",
+    version: "1.4.0",
     name: "Hyakanime",
     description:
       "Catalogues anime Stremio alimentés par AniList et enrichis par Hyakanime.",
     logo: "https://cdn-hyakanime.s3.eu-west-3.amazonaws.com/logo-hyakanime.png",
     resources: ["catalog", "meta"],
-    types: ["series", "movie"],
+    types: ["hyakanime"],
     idPrefixes: ["anilist:"],
     catalogs,
     behaviorHints: {
@@ -203,31 +246,25 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
       const skip = Math.max(0, Number(args?.extra?.skip || 0));
       const page = Math.floor(skip / 50) + 1;
       const search = String(args?.extra?.search || "").trim() || undefined;
+      const filter = parseFilter(String(args?.extra?.genre || ""));
 
-      let season;
-      let seasonYear;
-      let format;
-
-      if (args.id === "anilist-series") {
-        format = "TV";
-      } else if (args.id === "anilist-movies") {
-        format = "MOVIE";
-      } else {
-        const parsed = parseSeasonCatalogId(args.id);
-        if (!parsed) return { metas: [] };
-        season = parsed.season;
-        seasonYear = parsed.year;
-        format = "TV";
-      }
+      const format =
+        args.id === "hyakanime-movies"
+          ? "MOVIE"
+          : "TV";
 
       const result = await getAniListCatalog({
         page,
         perPage: 50,
-        season,
-        seasonYear,
         format,
         search,
-        sort: search ? ["SEARCH_MATCH"] : ["POPULARITY_DESC"]
+        season: filter.season,
+        seasonYear: filter.seasonYear,
+        genre: filter.genre,
+        status: filter.status,
+        sort: search
+          ? ["SEARCH_MATCH"]
+          : filter.sort || ["POPULARITY_DESC"]
       });
 
       return {
@@ -263,10 +300,24 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
   return builder.getInterface();
 }
 
-const defaultInterface = buildAddon(DEFAULT_CONFIG);
-const defaultRouter = getRouter(defaultInterface);
+// IMPORTANT: configuration routes first, before express.static / addon router.
+app.get("/", (_req, res) => {
+  res.redirect("/configure");
+});
 
-app.use(express.static("public"));
+app.get("/configure", (_req, res) => {
+  res.status(200);
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
+});
+
+app.get("/c/:config/configure", (req, res) => {
+  res.status(200);
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
+});
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -277,22 +328,19 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.get("/", (_req, res) => {
-  res.redirect("/configure");
-});
+app.use(express.static("public", {
+  index: false,
+  fallthrough: true,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline");
+    }
+  }
+}));
 
-app.get("/configure", (_req, res) => {
-  res.type("html");
-  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
-});
-
-// Stremio ouvre la page de configuration relativement à l'URL du manifest.
-// Une installation personnalisée /c/<config>/manifest.json doit donc exposer
-// également /c/<config>/configure.
-app.get("/c/:config/configure", (req, res) => {
-  res.type("html");
-  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
-});
+const defaultInterface = buildAddon(DEFAULT_CONFIG);
+const defaultRouter = getRouter(defaultInterface);
 
 app.use((req, res, next) => {
   if (req.path.startsWith("/c/")) return next();

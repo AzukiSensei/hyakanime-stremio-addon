@@ -273,7 +273,7 @@
            alt="Hyakanime">
       <div>
         <h1>Hyakanime pour Stremio</h1>
-        <p class="subtitle">Configure ton catalogue puis installe l’addon en un clic.</p>
+        <p class="subtitle">Choisis tes préférences puis installe Hyakanime dans Stremio.</p>
       </div>
     </section>
 
@@ -413,7 +413,6 @@
         includeSeries: $("includeSeries").checked,
         includeMovies: $("includeMovies").checked,
         showStats: $("showStats").checked,
-        seasonalCatalogs: $("seasonalCatalogs").checked,
         seasonYearsBack: Number($("seasonYearsBack").value)
       };
     }
@@ -451,10 +450,6 @@
         $("showStats").checked = config.showStats;
       }
 
-      if (typeof config.seasonalCatalogs === "boolean") {
-        $("seasonalCatalogs").checked = config.seasonalCatalogs;
-      }
-
       if (Number.isFinite(Number(config.seasonYearsBack))) {
         const value = String(Math.max(0, Math.min(5, Number(config.seasonYearsBack))));
         $("seasonYearsBack").value = value;
@@ -466,7 +461,6 @@
       includeSeries: true,
       includeMovies: true,
       showStats: true,
-      seasonalCatalogs: true,
       seasonYearsBack: 2
     });
 
@@ -474,7 +468,7 @@
 
     applyConfig(configFromPath());
 
-    ["titleLanguage", "includeSeries", "includeMovies", "showStats", "seasonalCatalogs", "seasonYearsBack"]
+    ["titleLanguage", "includeSeries", "includeMovies", "showStats", "seasonYearsBack"]
       .forEach((id) => $(id).addEventListener("change", update));
 
     $("copyButton").addEventListener("click", async () => {

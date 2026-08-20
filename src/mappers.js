@@ -38,49 +38,55 @@ function parseAniListId(id) {
   return match ? match[1] : null;
 }
 
-function normalizeAniListType(media) {
-  return media?.format === "MOVIE" ? "movie" : "series";
+function isMovie(media) {
+  return media?.format === "MOVIE";
 }
 
 function aniListToPreviewMeta(media, config = {}) {
   return {
     id: anilistId(media.id),
-    type: normalizeAniListType(media),
+    type: "hyakanime",
     name: pickAniListTitle(media, config.titleLanguage),
     poster: media?.coverImage?.extraLarge || media?.coverImage?.large,
     posterShape: "poster",
-    year: media?.seasonYear || media?.startDate?.year,
-    releaseInfo: media?.seasonYear
-      ? `${media.season || ""} ${media.seasonYear}`.trim()
-      : undefined
+    year: media?.seasonYear || media?.startDate?.year
   };
 }
 
 function buildAniListVideos(media) {
-  if (normalizeAniListType(media) !== "series") return [];
+  if (isMovie(media)) return [];
 
   const total = Number(media?.episodes || 0);
   if (!Number.isFinite(total) || total <= 0) return [];
 
+  const thumb =
+    media?.bannerImage ||
+    media?.coverImage?.extraLarge ||
+    media?.coverImage?.large;
+
   return Array.from({ length: Math.min(total, 2000) }, (_, i) => {
     const episode = i + 1;
+
     return {
       id: `${anilistId(media.id)}:${episode}`,
       title: `Épisode ${episode}`,
       season: 1,
       episode,
       overview: `Épisode ${episode} de ${pickAniListTitle(media)}.`,
-      thumbnail: media?.coverImage?.large || media?.coverImage?.extraLarge
+      thumbnail: thumb
     };
   });
 }
 
 function aniListToFullMeta(media, config = {}, hyak = null) {
-  const type = normalizeAniListType(media);
   const studios = media?.studios?.nodes?.map((s) => s.name).filter(Boolean) || [];
   const year = media?.seasonYear || media?.startDate?.year;
 
-  let description = stripHtml(media?.description) || "Fiche anime AniList.";
+  // Hyakanime est prioritaire car son synopsis est souvent en français.
+  let description =
+    String(hyak?.synopsis || "").trim() ||
+    stripHtml(media?.description) ||
+    "Fiche anime.";
 
   if (hyak?.streaming?.length) {
     const platforms = [...new Set(
@@ -94,13 +100,17 @@ function aniListToFullMeta(media, config = {}, hyak = null) {
 
   const meta = {
     id: anilistId(media.id),
-    type,
+    type: "hyakanime",
     name: pickAniListTitle(media, config.titleLanguage),
     poster:
       media?.coverImage?.extraLarge ||
       media?.coverImage?.large ||
       hyak?.image,
-    background: media?.bannerImage || hyak?.image,
+    background:
+      media?.bannerImage ||
+      hyak?.banner ||
+      hyak?.image ||
+      media?.coverImage?.extraLarge,
     description,
     genres: Array.isArray(media?.genres) ? media.genres : [],
     year,
@@ -111,41 +121,15 @@ function aniListToFullMeta(media, config = {}, hyak = null) {
         ? `${media.season} ${media.seasonYear}`
         : null
     ].filter(Boolean).join(" • "),
-    website: `https://anilist.co/anime/${media.id}`
+    website: hyak?.id
+      ? `https://hyakanime.fr/anime/${hyak.id}`
+      : `https://anilist.co/anime/${media.id}`
   };
 
   if (studios.length) meta.director = studios.join(", ");
-  if (type === "series") meta.videos = buildAniListVideos(media);
+  if (!isMovie(media)) meta.videos = buildAniListVideos(media);
 
   return meta;
-}
-
-// Legacy helpers kept for backward compatibility with already-installed URLs.
-function pickTitle(anime, preferred = "auto") {
-  const choices = {
-    fr: anime?.title,
-    en: anime?.titleEN,
-    romaji: anime?.romanji,
-    jp: anime?.titleJP
-  };
-  if (preferred !== "auto" && choices[preferred]) return choices[preferred];
-  return anime?.title || anime?.titleEN || anime?.romanji || anime?.titleJP || anime?.alt?.[0] || `Anime ${anime?.id ?? ""}`;
-}
-
-function normalizeType(anime) {
-  const raw = String(anime?.type || "").trim().toLowerCase();
-  return raw === "movie" || raw === "film" || raw.includes("movie") || raw.includes("film")
-    ? "movie"
-    : "series";
-}
-
-function hyakId(id) {
-  return `hyakanime:${id}`;
-}
-
-function parseHyakId(id) {
-  const match = /^hyakanime:(\d+)$/.exec(String(id));
-  return match ? match[1] : null;
 }
 
 module.exports = {
@@ -153,12 +137,7 @@ module.exports = {
   pickAniListTitle,
   anilistId,
   parseAniListId,
-  normalizeAniListType,
   aniListToPreviewMeta,
   buildAniListVideos,
-  aniListToFullMeta,
-  pickTitle,
-  normalizeType,
-  hyakId,
-  parseHyakId
+  aniListToFullMeta
 };

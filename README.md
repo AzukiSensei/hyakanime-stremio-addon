@@ -1,45 +1,60 @@
-# Hyakanime Stremio Addon
+# Hyakanime Stremio Addon — v1.4.0
 
-## v1.3.1
+## Structure Stremio
 
-Architecture hybride :
+Type personnalisé :
 
-- AniList = découverte, saisons, années, affiches, synopsis, genres, nombre d'épisodes
-- Hyakanime = enrichissement complémentaire quand une fiche correspond
-- Stremio = types standards `series` et `movie`
+```text
+Hyakanime
+```
 
-### Catalogues
-
-L'addon déclare notamment :
+Catalogues :
 
 ```text
 Séries
 Films
-Séries — Winter 2026
-Séries — Spring 2026
-Séries — Summer 2026
-Séries — Fall 2026
-Séries — Winter 2025
+```
+
+Filtres de Séries via `genre` :
+
+```text
+Tout
+En cours
+À venir
+Populaires
+Tendances
+Winter 2026
+Spring 2026
+Summer 2026
+Fall 2026
+...
+Action
+Adventure
+Comedy
+Drama
+Fantasy
+Romance
+Sci-Fi
 ...
 ```
 
-Le nombre d'années de saisons visibles est configurable depuis `/configure`.
+## Métadonnées
 
-### Pourquoi ne pas créer un type `hyakanime` ?
+- AniList fournit catalogue, images, genres, saison et nombre d'épisodes.
+- Hyakanime enrichit les fiches quand une correspondance est trouvée.
+- Le synopsis Hyakanime est prioritaire afin d'avoir du français quand disponible.
+- Les épisodes utilisent `bannerImage` AniList comme miniature, avec fallback couverture.
 
-Les clients Stremio utilisent surtout les types standards :
+## Configuration
 
 ```text
-series
-movie
-channel
-tv
+/configure
+/c/<config>/configure
 ```
 
-Hyakanime est donc le nom/source de l'addon, tandis que les lignes visibles
-dans Stremio sont des catalogues séparés.
+Les routes sont servies explicitement en `text/html` avec `Content-Disposition: inline`.
 
-### Variables
+## Variables
 
 ```text
 PORT=7000
@@ -47,23 +62,3 @@ HYAKANIME_API_BASE=https://api-v5.hyakanime.fr
 CACHE_TTL_MS=300000
 ANILIST_CACHE_TTL_MS=300000
 ```
-
-### URLs
-
-```text
-/configure
-/manifest.json
-/health
-```
-
-
-### Configuration modifiable
-
-Les deux routes sont supportées :
-
-```text
-/configure
-/c/<configuration>/configure
-```
-
-La seconde recharge automatiquement les réglages encodés dans l'URL actuelle.
