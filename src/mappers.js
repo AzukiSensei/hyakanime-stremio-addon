@@ -1,4 +1,15 @@
-function pickTitle(anime) {
+function pickTitle(anime, preferred = "auto") {
+  const choices = {
+    fr: anime?.title,
+    en: anime?.titleEN,
+    romaji: anime?.romanji,
+    jp: anime?.titleJP
+  };
+
+  if (preferred !== "auto" && choices[preferred]) {
+    return choices[preferred];
+  }
+
   return (
     anime?.title ||
     anime?.titleEN ||
@@ -12,10 +23,7 @@ function pickTitle(anime) {
 function normalizeType(anime) {
   const raw = String(anime?.type || "").toLowerCase();
 
-  if (
-    raw.includes("movie") ||
-    raw.includes("film")
-  ) {
+  if (raw.includes("movie") || raw.includes("film")) {
     return "movie";
   }
 
@@ -57,24 +65,24 @@ function buildDescription(anime) {
   return details.join("\n") || "Fiche Hyakanime.";
 }
 
-function toPreviewMeta(anime) {
+function toPreviewMeta(anime, config = {}) {
   return {
     id: hyakId(anime.id),
     type: normalizeType(anime),
-    name: pickTitle(anime),
+    name: pickTitle(anime, config.titleLanguage),
     poster: anime.image || undefined,
     posterShape: "poster",
     year: yearFromAnime(anime)
   };
 }
 
-function toFullMeta(anime, stats) {
+function toFullMeta(anime, stats, config = {}) {
   const type = normalizeType(anime);
 
   const meta = {
     id: hyakId(anime.id),
     type,
-    name: pickTitle(anime),
+    name: pickTitle(anime, config.titleLanguage),
     poster: anime.image || undefined,
     background: anime.banner || anime.cover || anime.image || undefined,
     logo: anime.logo || undefined,
@@ -91,12 +99,10 @@ function toFullMeta(anime, stats) {
       : String(anime.studios);
   }
 
-  if (stats && typeof stats.UsersAdd === "number") {
+  if (config.showStats !== false && stats && typeof stats.UsersAdd === "number") {
     meta.description += `\n\nAjouté par ${stats.UsersAdd.toLocaleString("fr-FR")} utilisateurs Hyakanime.`;
   }
 
-  // Hyakanime expose des diffuseurs/liens officiels. Ils sont affichés comme liens
-  // dans la description, mais ne sont pas déclarés comme flux vidéo Stremio.
   if (Array.isArray(anime?.streaming) && anime.streaming.length) {
     const platforms = anime.streaming
       .map((entry) => entry?.source)

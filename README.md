@@ -1,98 +1,36 @@
 # Hyakanime Stremio Addon
 
-Addon Stremio communautaire **non officiel** utilisant l'API Hyakanime V5.
+Addon Stremio communautaire non officiel basé sur l'API Hyakanime V5.
 
 ## Fonctionnalités
 
-- Catalogue Hyakanime dans Stremio
-- Séries et films séparés
-- Recherche Stremio via Hyakanime
-- Fiches anime
-- Affiche, synopsis, genres, année, studio, source
-- Nombre d'utilisateurs Hyakanime ayant ajouté un titre lorsqu'il est disponible
-- Cache mémoire configurable
-- Docker / Docker Compose
+- Catalogues Séries et Films
+- Recherche Stremio
+- Métadonnées Hyakanime
+- Page de configuration `/configure`
+- Installation rapide via `stremio://`
+- Préférence de langue des titres
+- Activation/désactivation des catalogues
+- Activation/désactivation des statistiques Hyakanime
+- Docker / Dokploy compatible
 
-## Limite importante
+## URLs
 
-Cet addon ne fournit volontairement **aucun flux vidéo piraté ou inventé**.
-
-L'API Hyakanime expose notamment des informations de diffuseurs dans certaines fiches.
-Ces informations servent seulement à enrichir les métadonnées.
-
-L'addon déclare donc uniquement :
-
-- `catalog`
-- `meta`
-
-et pas `stream`.
-
-Il peut être combiné avec d'autres addons Stremio fournissant légalement des streams pour
-des identifiants compatibles. Comme les IDs de cet addon sont spécifiques à Hyakanime
-(`hyakanime:<id>`), un mapping externe AniList/MAL/IMDb serait nécessaire pour une
-interopérabilité complète avec les fournisseurs de streams Stremio existants.
-
-## API utilisée
-
-Base :
+Une fois déployé :
 
 ```text
-https://api-v5.hyakanime.fr
+https://votre-domaine/configure
+https://votre-domaine/manifest.json
+https://votre-domaine/health
 ```
 
-Endpoints utilisés :
+La page de configuration génère des URLs personnalisées :
 
 ```text
-GET /explore?search={query}&page={page}
-GET /anime/{id}
-GET /anime/stats/{id}
+https://votre-domaine/c/<configuration>/manifest.json
 ```
 
-## Installation locale
-
-Prérequis :
-
-- Node.js 18+
-
-Puis :
-
-```bash
-npm install
-npm start
-```
-
-L'addon sera disponible sur :
-
-```text
-http://127.0.0.1:7000/manifest.json
-```
-
-Dans Stremio, ajoute cette URL d'addon.
-
-## Docker
-
-```bash
-docker compose up -d --build
-```
-
-Puis :
-
-```text
-http://127.0.0.1:7000/manifest.json
-```
-
-## Déploiement public
-
-Stremio exige HTTPS pour les addons distants. Le SDK Stremio gère CORS, mais ton reverse
-proxy doit fournir un certificat HTTPS valide.
-
-Exemple :
-
-```text
-https://hyakanime-addon.example.com/manifest.json
-```
-
-Variables d'environnement :
+## Variables d'environnement
 
 ```text
 PORT=7000
@@ -100,24 +38,20 @@ HYAKANIME_API_BASE=https://api-v5.hyakanime.fr
 CACHE_TTL_MS=300000
 ```
 
-## Structure
+## Déploiement
 
-```text
-src/
-├── index.js       # Manifest + handlers Stremio
-├── hyakanime.js   # Client API Hyakanime
-└── mappers.js     # Conversion Hyakanime -> Stremio
+```bash
+npm install
+npm start
 ```
 
-## Étape suivante recommandée
+ou avec Docker :
 
-Pour obtenir une intégration Stremio réellement complète, il faut identifier dans
-Hyakanime un identifiant externe stable :
+```bash
+docker build -t hyakanime-stremio .
+docker run -p 7000:7000 hyakanime-stremio
+```
 
-- AniList
-- MyAnimeList
-- IMDb
-- TMDB
+## Limite
 
-On pourra alors mapper les fiches Hyakanime vers les IDs utilisés par les autres addons
-Stremio et ajouter des épisodes/saisons de façon fiable.
+Cet addon fournit `catalog` et `meta`, pas de flux vidéo direct.
