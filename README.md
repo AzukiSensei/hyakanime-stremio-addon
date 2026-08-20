@@ -1,73 +1,89 @@
-# Hyakanime Stremio Addon — v1.5.0
+# Hyakanime Stremio Addon — v1.6.0
 
-## Architecture
+## Changements principaux
 
-Hyakanime est désormais la source canonique.
+### Catalogue Hyakanime élargi
 
-```text
-Stremio catalogue/search
-        ↓
-Hyakanime /explore
-        ↓
-Hyakanime /anime/:id
-        ↓
-ID Stremio = hyakanime:<id>
-```
+Hyakanime reste la source canonique.
 
-AniList ne remplace plus le catalogue. Il sert uniquement à enrichir les fiches :
+La collecte passe désormais jusqu'à 40 pages `/explore` et cherche jusqu'à
+50 résultats par requête Stremio avant de s'arrêter.
+
+Cela améliore fortement les filtres peu denses comme :
 
 ```text
-Hyakanime fiche
-   + AniList matching
-   = fiche Stremio enrichie
-```
-
-## Priorité des données
-
-```text
-ID principal        Hyakanime
-Titre               Hyakanime
-Synopsis            Hyakanime
-Poster              Hyakanime
-Streaming           Hyakanime
-Genres              Hyakanime + AniList
-Banner              AniList en priorité
-Nombre d'épisodes   Hyakanime, fallback AniList
-Studio              Hyakanime + AniList
-Saison / année      Hyakanime, AniList en complément
-```
-
-## Catalogues
-
-Type :
-
-```text
-Hyakanime
-```
-
-Catalogues :
-
-```text
-Séries
+Summer 2026
+Winter 2025
+Fantasy
 Films
 ```
 
-Filtres séries :
+Le cache Hyakanime évite de refaire inutilement les mêmes requêtes de détail.
+
+### Enrichissement réel des saisons
+
+Après matching Hyakanime -> AniList :
 
 ```text
-Tout
-En cours
-À venir
-Winter / Spring / Summer / Fall par année
-Genres
+Hyakanime
+   ↓
+AniList
+   ↓ relations PREQUEL
+numéro de saison
 ```
 
-Les résultats sont toujours collectés depuis Hyakanime puis filtrés.
-
-## Debug
+Exemple :
 
 ```text
-/health
-/debug/hyakanime
-/debug/match/<hyakanime-id>
+Solo Leveling Season 2
+→ PREQUEL Solo Leveling
+→ Saison 2 dans Stremio
+```
+
+### Vrais épisodes via MyAnimeList/Jikan
+
+AniList fournit `idMal`.
+
+L'addon utilise ensuite l'API Jikan :
+
+```text
+Hyakanime
+→ AniList
+→ idMal
+→ Jikan /anime/{malId}/episodes
+```
+
+Quand Jikan possède les données, les épisodes gagnent :
+
+- vrai titre
+- date de diffusion
+- ordre d'épisode
+
+Les miniatures restent basées sur le `bannerImage` AniList ou l'image Hyakanime,
+car Jikan ne fournit pas systématiquement une miniature par épisode.
+
+### Priorité des sources
+
+```text
+Catalogue       Hyakanime
+ID              Hyakanime
+Titre           Hyakanime
+Synopsis        Hyakanime
+Poster          Hyakanime
+Genres          Hyakanime + AniList
+Banner          AniList
+Saison          AniList relations
+Épisodes        Hyakanime/AniList pour le nombre
+Titres épisodes Jikan/MAL
+Dates épisodes  Jikan/MAL
+```
+
+## Variables
+
+```text
+PORT=7000
+HYAKANIME_API_BASE=https://api-v5.hyakanime.fr
+CACHE_TTL_MS=300000
+ANILIST_CACHE_TTL_MS=900000
+JIKAN_CACHE_TTL_MS=3600000
 ```

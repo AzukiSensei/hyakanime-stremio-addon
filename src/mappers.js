@@ -44,9 +44,7 @@ function normalizeHyakanimeType(hyak) {
     raw === "film" ||
     raw.includes("movie") ||
     raw.includes("film")
-  ) {
-    return "movie";
-  }
+  ) return "movie";
 
   return "series";
 }
@@ -61,7 +59,6 @@ function deriveSeason(hyak) {
 
   const month = Number(hyak?.start?.month || 0);
   if (!month) return null;
-
   if (month <= 3) return "WINTER";
   if (month <= 6) return "SPRING";
   if (month <= 9) return "SUMMER";
@@ -79,10 +76,32 @@ function toPreviewMeta(hyak, config = {}) {
   };
 }
 
-function buildVideos(hyak, ani = null) {
+function mergeGenres(hyak, ani) {
+  return [...new Set([
+    ...(Array.isArray(hyak?.genre) ? hyak.genre : []),
+    ...(Array.isArray(ani?.genres) ? ani.genres : [])
+  ].filter(Boolean))];
+}
+
+function episodeTitle(row, episode) {
+  return (
+    row?.title ||
+    row?.title_romanji ||
+    row?.title_japanese ||
+    `Épisode ${episode}`
+  );
+}
+
+function buildVideos(hyak, ani, jikanEpisodes = [], seasonNumber = 1) {
   if (normalizeHyakanimeType(hyak) === "movie") return [];
 
-  const total = Number(hyak?.NbEpisodes || ani?.episodes || 0);
+  const total = Number(
+    hyak?.NbEpisodes ||
+    ani?.episodes ||
+    jikanEpisodes.length ||
+    0
+  );
+
   if (!Number.isFinite(total) || total <= 0) return [];
 
   const thumbnail =
@@ -94,29 +113,41 @@ function buildVideos(hyak, ani = null) {
 
   return Array.from({ length: Math.min(total, 2000) }, (_, index) => {
     const episode = index + 1;
+    const jikan = jikanEpisodes.find((row) => Number(row?.mal_id) === episode) ||
+      jikanEpisodes[index];
+
+    const released =
+      jikan?.aired && !Number.isNaN(Date.parse(jikan.aired))
+        ? new Date(jikan.aired).toISOString()
+        : undefined;
 
     return {
-      id: `${hyakId(hyak.id)}:${episode}`,
-      title: `Épisode ${episode}`,
-      season: 1,
+      id: `${hyakId(hyak.id)}:${seasonNumber}:${episode}`,
+      title: episodeTitle(jikan, episode),
+      season: seasonNumber,
       episode,
+      released,
       thumbnail,
-      overview: `Épisode ${episode} de ${pickHyakanimeTitle(hyak)}.`
+      overview:
+        jikan?.title
+          ? `${jikan.title}`
+          : `Épisode ${episode} de ${pickHyakanimeTitle(hyak)}.`
     };
   });
 }
 
-function mergeGenres(hyak, ani) {
-  const values = [
-    ...(Array.isArray(hyak?.genre) ? hyak.genre : []),
-    ...(Array.isArray(ani?.genres) ? ani.genres : [])
-  ].filter(Boolean);
-
-  return [...new Set(values)];
-}
-
-function toFullMeta(hyak, ani = null, stats = null, config = {}) {
+function toFullMeta(
+  hyak,
+  ani = null,
+  stats = null,
+  config = {},
+  enrichment = {}
+) {
   const type = normalizeHyakanimeType(hyak);
+  const seasonNumber = Number(enrichment?.seasonNumber || 1);
+  const jikanEpisodes = Array.isArray(enrichment?.episodes)
+    ? enrichment.episodes
+    : [];
 
   let description =
     String(hyak?.synopsis || "").trim() ||
@@ -127,22 +158,17 @@ function toFullMeta(hyak, ani = null, stats = null, config = {}) {
     description += `\n\nAjouté par ${stats.UsersAdd.toLocaleString("fr-FR")} utilisateurs Hyakanime.`;
   }
 
-  if (Array.isArray(hyak?.streaming) && hyak.streaming.length) {
-    const platforms = [...new Set(
-      hyak.streaming.map((entry) => entry?.source).filter(Boolean)
-    )];
-
-    if (platforms.length) {
-      description += `\n\nDisponible via : ${platforms.join(", ")}.`;
-    }
-  }
-
   const studios = [
     ...(Array.isArray(hyak?.studios) ? hyak.studios : hyak?.studios ? [hyak.studios] : []),
     ...((ani?.studios?.nodes || []).map((studio) => studio.name))
   ].filter(Boolean);
 
-  const totalEpisodes = Number(hyak?.NbEpisodes || ani?.episodes || 0);
+  const totalEpisodes = Number(
+    hyak?.NbEpisodes ||
+    ani?.episodes ||
+    jikanEpisodes.length ||
+    0
+  );
 
   const meta = {
     id: hyakId(hyak.id),
@@ -163,6 +189,7 @@ function toFullMeta(hyak, ani = null, stats = null, config = {}) {
     releaseInfo: [
       hyak?.type || ani?.format,
       totalEpisodes ? `${totalEpisodes} épisodes` : null,
+      seasonNumber > 1 ? `Saison ${seasonNumber}` : null,
       ani?.season && ani?.seasonYear
         ? `${ani.season} ${ani.seasonYear}`
         : null
@@ -171,7 +198,15 @@ function toFullMeta(hyak, ani = null, stats = null, config = {}) {
   };
 
   if (studios.length) meta.director = [...new Set(studios)].join(", ");
-  if (type === "series") meta.videos = buildVideos(hyak, ani);
+
+  if (type === "series") {
+    meta.videos = buildVideos(
+      hyak,
+      ani,
+      jikanEpisodes,
+      seasonNumber
+    );
+  }
 
   return meta;
 }

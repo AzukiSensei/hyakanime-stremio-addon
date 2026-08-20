@@ -12,8 +12,14 @@ const {
 
 const {
   ANILIST_API,
-  findBestMatch
+  findBestMatch,
+  deriveSeasonNumber
 } = require("./anilist");
+
+const {
+  JIKAN_API,
+  getEpisodes: getJikanEpisodes
+} = require("./jikan");
 
 const {
   parseHyakId,
@@ -202,8 +208,8 @@ async function collectHyakanimeCatalog({
   skip = 0,
   wantedType,
   filter = {},
-  pageSize = 20,
-  maxExplorePages = 12
+  pageSize = 50,
+  maxExplorePages = 40
 }) {
   const targetCount = skip + pageSize;
   const matches = [];
@@ -272,7 +278,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.5.0",
+    version: "1.6.0",
     name: "Hyakanime",
     description:
       "Catalogue Hyakanime pour Stremio, enrichi avec AniList.",
@@ -305,7 +311,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
         skip,
         wantedType,
         filter,
-        pageSize: 20
+        pageSize: 50
       });
 
       console.log(
@@ -337,12 +343,33 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
           : Promise.resolve(null)
       ]);
 
+      let seasonNumber = 1;
+      let episodes = [];
+
+      if (ani) {
+        seasonNumber = await deriveSeasonNumber(ani).catch(() => 1);
+
+        if (ani.idMal) {
+          episodes = await getJikanEpisodes(
+            ani.idMal,
+            Number(hyak?.NbEpisodes || ani?.episodes || 0)
+          ).catch(() => []);
+        }
+      }
+
       console.log(
-        `[meta] hyakanime=${animeId} anilist=${ani?.id || "no-match"}`
+        `[meta] hyakanime=${animeId} anilist=${ani?.id || "no-match"} ` +
+        `mal=${ani?.idMal || "none"} season=${seasonNumber} episodes=${episodes.length}`
       );
 
       return {
-        meta: toFullMeta(hyak, ani, stats, config)
+        meta: toFullMeta(
+          hyak,
+          ani,
+          stats,
+          config,
+          { seasonNumber, episodes }
+        )
       };
     } catch (error) {
       console.error("[meta]", error?.stack || error);
@@ -377,11 +404,12 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     addon: "Hyakanime",
-    version: "1.5.0",
+    version: "1.6.0",
     catalogSource: "Hyakanime",
     enrichmentSource: "AniList",
     hyakanimeApi: API_BASE,
-    aniListApi: ANILIST_API
+    aniListApi: ANILIST_API,
+    jikanApi: JIKAN_API
   });
 });
 
