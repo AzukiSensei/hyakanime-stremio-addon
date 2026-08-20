@@ -3,37 +3,83 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#101116">
+<meta name="theme-color" content="#0d0f14">
 <title>AniList — Configuration Stremio</title>
 <style>
-:root{color-scheme:dark;--bg:#0b0c10;--panel:#14161d;--panel2:#1a1d26;--border:#2a2e3a;--text:#f5f6fa;--muted:#9da4b4;--accent:#7c5cff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}main{width:min(720px,calc(100% - 28px));margin:auto;padding:34px 0 56px}.hero{margin-bottom:24px}h1{font-size:34px;margin:0 0 8px}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:20px;margin-bottom:14px}.field{display:grid;gap:8px;margin:16px 0}select{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:13px}.row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}.row:last-child{border-bottom:0}.switch{width:48px;height:28px;position:relative}.switch input{display:none}.slider{position:absolute;inset:0;border-radius:999px;background:#343947}.slider:before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;border-radius:50%;background:white;transition:.2s}.switch input:checked+.slider{background:var(--accent)}.switch input:checked+.slider:before{transform:translateX(20px)}.actions{display:grid;gap:10px;margin-top:18px}.btn{border:0;border-radius:13px;padding:14px 16px;font:inherit;font-weight:700;text-align:center;text-decoration:none;cursor:pointer}.primary{background:var(--accent);color:white}.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}.url{margin-top:14px;padding:11px;background:#0c0e13;border:1px solid var(--border);border-radius:10px;color:var(--muted);font:11px ui-monospace,monospace;overflow-wrap:anywhere}@media(min-width:600px){.actions{grid-template-columns:1fr 1fr}}
+:root{color-scheme:dark;--bg:#0b0d12;--panel:#141821;--panel2:#1b202b;--border:#2a3140;--text:#f7f8fb;--muted:#98a2b3;--accent:#3db4f2;--ok:#54d68b;--warn:#f5b84b;--bad:#ff6b7d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -15%,rgba(61,180,242,.14),transparent 32rem),var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}main{width:min(760px,calc(100% - 28px));margin:auto;padding:26px 0 56px}.top{display:flex;align-items:center;gap:16px;margin-bottom:18px}.logo{width:64px;height:64px;border-radius:16px}.top h1{margin:0;font-size:32px}.sub{color:var(--muted);margin-top:5px}.statusbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.stat{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px}.stat small{display:block;color:var(--muted);margin-bottom:5px}.stat strong{font-size:14px}.healthy{color:var(--ok)}.degraded{color:var(--warn)}.unhealthy{color:var(--bad)}.card{background:rgba(20,24,33,.96);border:1px solid var(--border);border-radius:18px;padding:20px;margin-bottom:14px}.card h2{margin:0 0 5px;font-size:17px}.card p{margin:0 0 16px;color:var(--muted);font-size:13px}.field{display:grid;gap:8px;margin:15px 0}label{font-size:14px;font-weight:650}select{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:13px;font:inherit}.row{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:13px 0;border-bottom:1px solid var(--border)}.row:last-child{border-bottom:0}.copy strong{font-size:14px}.copy span{display:block;color:var(--muted);font-size:12px;margin-top:3px}.switch{width:48px;height:28px;position:relative;flex:0 0 auto}.switch input{display:none}.slider{position:absolute;inset:0;border-radius:999px;background:#343b49;transition:.2s}.slider:before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}.switch input:checked+.slider{background:var(--accent)}.switch input:checked+.slider:before{transform:translateX(20px)}.actions{display:grid;gap:10px;margin-top:18px}.btn{border:0;border-radius:13px;padding:14px 16px;font:inherit;font-weight:750;text-align:center;text-decoration:none;cursor:pointer}.primary{background:var(--accent);color:#071018}.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}.url{margin-top:14px;padding:11px;background:#0b0d12;border:1px solid var(--border);border-radius:10px;color:var(--muted);font:11px ui-monospace,monospace;overflow-wrap:anywhere}.hint{margin-top:10px;color:var(--muted);font-size:12px}@media(min-width:620px){.actions{grid-template-columns:1fr 1fr}.statusbar{grid-template-columns:repeat(3,1fr)}}
 </style>
 </head>
 <body>
 <main>
-<section class="hero"><h1>AniList pour Stremio</h1><div class="muted">Catalogue AniList avec métadonnées d’épisodes AniZip.</div></section>
+<section class="top">
+<img class="logo" src="https://anilist.co/img/icons/android-chrome-512x512.png" alt="AniList">
+<div><h1>AniList pour Stremio</h1><div class="sub">Catalogue AniList + épisodes AniZip</div></div>
+</section>
+
+<section class="statusbar">
+<div class="stat"><small>Version</small><strong id="version">2.1.0</strong></div>
+<div class="stat"><small>Santé</small><strong id="health">Chargement…</strong></div>
+<div class="stat"><small>AniZip</small><strong id="anizip">Chargement…</strong></div>
+</section>
+
 <section class="card">
-<div class="field"><label for="titleLanguage">Titre préféré</label><select id="titleLanguage"><option value="auto">Automatique</option><option value="en">Anglais</option><option value="romaji">Romaji</option><option value="jp">Japonais</option></select></div>
-<div class="row"><div><strong>Séries</strong><div class="muted">Afficher le catalogue séries.</div></div><label class="switch"><input id="includeSeries" type="checkbox" checked><span class="slider"></span></label></div>
-<div class="row"><div><strong>Films</strong><div class="muted">Afficher le catalogue films.</div></div><label class="switch"><input id="includeMovies" type="checkbox" checked><span class="slider"></span></label></div>
+<h2>Catalogues</h2>
+<p>Choisis les contenus exposés dans Discover.</p>
+<div class="row"><div class="copy"><strong>Séries TV</strong><span>Catalogue principal TV.</span></div><label class="switch"><input id="includeSeries" type="checkbox" checked><span class="slider"></span></label></div>
+<div class="row"><div class="copy"><strong>Films</strong><span>Films anime AniList.</span></div><label class="switch"><input id="includeMovies" type="checkbox" checked><span class="slider"></span></label></div>
+<div class="row"><div class="copy"><strong>ONA</strong><span>Inclure les séries distribuées en ligne.</span></div><label class="switch"><input id="includeONA" type="checkbox" checked><span class="slider"></span></label></div>
+<div class="row"><div class="copy"><strong>OVA</strong><span>Inclure les OVA.</span></div><label class="switch"><input id="includeOVA" type="checkbox" checked><span class="slider"></span></label></div>
+<div class="row"><div class="copy"><strong>Specials</strong><span>Inclure les épisodes spéciaux.</span></div><label class="switch"><input id="includeSpecials" type="checkbox"><span class="slider"></span></label></div>
+</section>
+
+<section class="card">
+<h2>Affichage</h2>
+<div class="field"><label for="titleLanguage">Titres</label><select id="titleLanguage"><option value="auto">Automatique AniList</option><option value="en">Anglais</option><option value="romaji">Romaji</option><option value="jp">Japonais</option></select></div>
+<div class="field"><label for="defaultSort">Tri par défaut</label><select id="defaultSort"><option value="popularity">Popularité</option><option value="trending">Tendances</option><option value="score">Mieux notés</option><option value="newest">Nouveautés</option></select></div>
 <div class="field"><label for="seasonYearsBack">Historique saisonnier</label><select id="seasonYearsBack"><option value="2">2 ans</option><option value="4" selected>4 ans</option><option value="6">6 ans</option><option value="10">10 ans</option></select></div>
-<div class="actions"><a id="install" class="btn primary" href="#">Installer dans Stremio</a><button id="copy" class="btn secondary">Copier l’URL</button></div>
+</section>
+
+<section class="card">
+<h2>Épisodes</h2>
+<p>AniZip est utilisé en priorité. Si ton serveur est bloqué par Cloudflare, l’addon garde les données AniList en fallback.</p>
+<div class="row"><div class="copy"><strong>Utiliser AniZip</strong><span>Titres, synopsis, dates et images épisode.</span></div><label class="switch"><input id="useAniZip" type="checkbox" checked><span class="slider"></span></label></div>
+<div class="row"><div class="copy"><strong>Préférer les images AniZip</strong><span>Sinon privilégier les thumbnails AniList.</span></div><label class="switch"><input id="preferEpisodeImages" type="checkbox" checked><span class="slider"></span></label></div>
+</section>
+
+<section class="card">
+<div class="actions"><a id="install" class="btn primary" href="#">Installer dans Stremio</a><button id="copy" class="btn secondary" type="button">Copier l’URL</button></div>
 <div id="url" class="url"></div>
+<div class="hint">Le type Stremio de cet addon est maintenant « AniList ».</div>
 </section>
 </main>
+
 <script>
 const $=id=>document.getElementById(id);
 function b64url(str){const bytes=new TextEncoder().encode(str);let b="";for(const x of bytes)b+=String.fromCharCode(x);return btoa(b).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
 function from64(v){try{const n=v.replace(/-/g,"+").replace(/_/g,"/");const p=n+"=".repeat((4-n.length%4)%4);const bin=atob(p);return new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0)))}catch{return null}}
 function pathConfig(){const m=location.pathname.match(/^\/c\/([^/]+)\/configure\/?$/);if(!m)return null;try{return JSON.parse(from64(m[1]))}catch{return null}}
-function current(){return{titleLanguage:$("titleLanguage").value,includeSeries:$("includeSeries").checked,includeMovies:$("includeMovies").checked,seasonYearsBack:Number($("seasonYearsBack").value)}}
+function current(){return{
+ titleLanguage:$("titleLanguage").value,
+ includeSeries:$("includeSeries").checked,
+ includeMovies:$("includeMovies").checked,
+ includeONA:$("includeONA").checked,
+ includeOVA:$("includeOVA").checked,
+ includeSpecials:$("includeSpecials").checked,
+ seasonYearsBack:Number($("seasonYearsBack").value),
+ defaultSort:$("defaultSort").value,
+ useAniZip:$("useAniZip").checked,
+ preferEpisodeImages:$("preferEpisodeImages").checked
+}}
 function urls(c){const enc=b64url(JSON.stringify(c));const path=`/c/${enc}/manifest.json`;return{https:`${location.origin}${path}`,stremio:`stremio://${location.host}${path}`}}
-function apply(c){if(!c)return;if(["auto","en","romaji","jp"].includes(c.titleLanguage))$("titleLanguage").value=c.titleLanguage;if(typeof c.includeSeries==="boolean")$("includeSeries").checked=c.includeSeries;if(typeof c.includeMovies==="boolean")$("includeMovies").checked=c.includeMovies;if(Number.isFinite(Number(c.seasonYearsBack)))$("seasonYearsBack").value=String(c.seasonYearsBack)}
+function apply(c){if(!c)return;for(const id of ["includeSeries","includeMovies","includeONA","includeOVA","includeSpecials","useAniZip","preferEpisodeImages"]){if(typeof c[id]==="boolean")$(id).checked=c[id]}if(["auto","en","romaji","jp"].includes(c.titleLanguage))$("titleLanguage").value=c.titleLanguage;if(["popularity","trending","score","newest"].includes(c.defaultSort))$("defaultSort").value=c.defaultSort;if(Number.isFinite(Number(c.seasonYearsBack)))$("seasonYearsBack").value=String(c.seasonYearsBack)}
 function update(){const u=urls(current());$("url").textContent=u.https;$("install").href=u.stremio}
-apply(pathConfig());["titleLanguage","includeSeries","includeMovies","seasonYearsBack"].forEach(id=>$(id).addEventListener("change",update));
+async function health(){try{const r=await fetch("/health",{cache:"no-store"});const h=await r.json();$("version").textContent=h.version||"2.1.0";$("health").textContent=h.status||"inconnu";$("health").className=h.status||"";const a=h?.services?.anizip;$("anizip").textContent=a?.status||"inconnu";$("anizip").className=a?.ok?"healthy":(h.status==="degraded"?"degraded":"unhealthy")}catch{$("health").textContent="indisponible";$("health").className="unhealthy";$("anizip").textContent="inconnu"}}
+apply(pathConfig());
+["titleLanguage","includeSeries","includeMovies","includeONA","includeOVA","includeSpecials","seasonYearsBack","defaultSort","useAniZip","preferEpisodeImages"].forEach(id=>$(id).addEventListener("change",update));
 $("copy").addEventListener("click",async()=>{await navigator.clipboard.writeText(urls(current()).https);$("copy").textContent="URL copiée";setTimeout(()=>$("copy").textContent="Copier l’URL",1200)});
-if(pathConfig())$("install").textContent="Mettre à jour dans Stremio";update();
+if(pathConfig())$("install").textContent="Mettre à jour dans Stremio";
+update();health();
 </script>
 </body>
 </html>

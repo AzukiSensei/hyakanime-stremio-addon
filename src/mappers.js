@@ -21,7 +21,7 @@ function pickTitle(media, preferred="auto") {
 function toPreviewMeta(media, config={}) {
   return {
     id: anilistId(media.id),
-    type: "anime",
+    type: "anilist",
     name: pickTitle(media, config.titleLanguage),
     poster: media?.coverImage?.extraLarge || media?.coverImage?.large,
     posterShape: "poster",
@@ -97,7 +97,9 @@ function buildVideos(media, aniZipPayload, config={}) {
       season: epSeason,
       episode: epNumber,
       released,
-      thumbnail: zip?.image || stream?.image || fallback,
+      thumbnail: config.preferEpisodeImages !== false
+        ? (zip?.image || stream?.image || fallback)
+        : (stream?.image || fallback || zip?.image),
       overview: zip?.overview || `Épisode ${epNumber} de ${pickTitle(media, config.titleLanguage)}.`
     };
   });
@@ -109,7 +111,7 @@ function toFullMeta(media, aniZipPayload=null, config={}) {
   const totalEpisodes = Number(media?.episodes || aniZipPayload?.episodeCount || rows.length || 0);
   const meta = {
     id: anilistId(media.id),
-    type: "anime",
+    type: "anilist",
     name: pickTitle(media, config.titleLanguage),
     poster: media?.coverImage?.extraLarge || media?.coverImage?.large,
     background: media?.bannerImage || media?.coverImage?.extraLarge,

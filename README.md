@@ -1,24 +1,17 @@
-# AniList Stremio Addon — v2.0.0
+# AniList Stremio Addon — v2.1.0
 
-Architecture :
+Architecture:
+- AniList: catalogue, recherche, fiches, IDs
+- AniZip: enrichissement épisode optionnel
 
-```text
-AniList = catalogue + recherche + fiches + IDs
-AniZip  = épisodes + images + dates + synopsis épisode
-```
+Changes:
+- Stremio custom type is now `anilist` so Discover shows AniList
+- configuration page displays AniList logo
+- version and live health status at top
+- AniZip health/degraded state visible
+- extra config: ONA, OVA, Specials, default sort, AniZip toggle, episode-image preference
+- AniZip 403/Cloudflare does not break metadata; AniList remains fallback
 
-Hyakanime, Kitsu et Jikan sont supprimés.
-
-Endpoints :
-- `/configure`
+Debug:
 - `/health`
-- `/debug/anilist`
 - `/debug/anizip/<anilist_id>`
-
-Variables :
-```text
-PORT=7000
-ANILIST_CACHE_TTL_MS=900000
-ANIZIP_API_BASE=https://hayase.ani.zip
-ANIZIP_CACHE_TTL_MS=3600000
-```
