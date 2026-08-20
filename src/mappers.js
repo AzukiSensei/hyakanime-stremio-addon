@@ -5,217 +5,128 @@ function stripHtml(value) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
-
-function pickHyakanimeTitle(hyak, preferred = "auto") {
-  const choices = {
-    fr: hyak?.title,
-    en: hyak?.titleEN,
-    romaji: hyak?.romanji,
-    jp: hyak?.titleJP
-  };
-
-  if (preferred !== "auto" && choices[preferred]) {
-    return choices[preferred];
-  }
-
-  return (
-    hyak?.title ||
-    hyak?.titleEN ||
-    hyak?.romanji ||
-    hyak?.titleJP ||
-    `Anime ${hyak?.id ?? ""}`
-  );
+function anilistId(id) { return `anilist:${id}`; }
+function parseAniListId(id) {
+  const m = /^anilist:(\d+)$/.exec(String(id));
+  return m ? Number(m[1]) : null;
 }
-
-function hyakId(id) {
-  return `hyakanime:${id}`;
+function isMovie(media) { return media?.format === "MOVIE"; }
+function pickTitle(media, preferred="auto") {
+  const t = media?.title || {};
+  if (preferred === "en" && t.english) return t.english;
+  if (preferred === "romaji" && t.romaji) return t.romaji;
+  if (preferred === "jp" && t.native) return t.native;
+  return t.userPreferred || t.english || t.romaji || t.native || `Anime ${media?.id ?? ""}`;
 }
-
-function parseHyakId(id) {
-  const match = /^hyakanime:(\d+)$/.exec(String(id));
-  return match ? match[1] : null;
-}
-
-function normalizeHyakanimeType(hyak) {
-  const raw = String(hyak?.type || "").trim().toLowerCase();
-
-  if (
-    raw === "movie" ||
-    raw === "film" ||
-    raw.includes("movie") ||
-    raw.includes("film")
-  ) return "movie";
-
-  return "series";
-}
-
-function deriveSeason(hyak) {
-  const explicit = String(hyak?.season || "").toLowerCase();
-
-  if (explicit.includes("winter") || explicit.includes("hiver")) return "WINTER";
-  if (explicit.includes("spring") || explicit.includes("printemps")) return "SPRING";
-  if (explicit.includes("summer") || explicit.includes("été") || explicit.includes("ete")) return "SUMMER";
-  if (explicit.includes("fall") || explicit.includes("autumn") || explicit.includes("automne")) return "FALL";
-
-  const month = Number(hyak?.start?.month || 0);
-  if (!month) return null;
-  if (month <= 3) return "WINTER";
-  if (month <= 6) return "SPRING";
-  if (month <= 9) return "SUMMER";
-  return "FALL";
-}
-
-function toPreviewMeta(hyak, config = {}) {
+function toPreviewMeta(media, config={}) {
   return {
-    id: hyakId(hyak.id),
-    type: "hyakanime",
-    name: pickHyakanimeTitle(hyak, config.titleLanguage),
-    poster: hyak?.image || undefined,
+    id: anilistId(media.id),
+    type: "anime",
+    name: pickTitle(media, config.titleLanguage),
+    poster: media?.coverImage?.extraLarge || media?.coverImage?.large,
     posterShape: "poster",
-    year: hyak?.start?.year || undefined
+    year: media?.seasonYear || media?.startDate?.year
   };
 }
-
-function mergeGenres(hyak, ani) {
-  return [...new Set([
-    ...(Array.isArray(hyak?.genre) ? hyak.genre : []),
-    ...(Array.isArray(ani?.genres) ? ani.genres : [])
-  ].filter(Boolean))];
+function episodeRowsFromAniZip(payload) {
+  if (!payload?.episodes || typeof payload.episodes !== "object") return [];
+  return Object.entries(payload.episodes)
+    .map(([key,row]) => ({
+      absolute: Number(row?.absoluteEpisodeNumber || row?.episodeNumber || key) || null,
+      seasonNumber: Number(row?.seasonNumber || 1) || 1,
+      episodeNumber: Number(row?.episodeNumber || row?.absoluteEpisodeNumber || key) || null,
+      title: row?.title || {},
+      overview: row?.overview || row?.summary || row?.description || null,
+      airDate: row?.airDate || row?.airDateUtc || row?.airdate || null,
+      image: row?.image || null
+    }))
+    .filter(r => r.absolute != null)
+    .sort((a,b) => a.absolute - b.absolute);
 }
-
-function episodeTitle(row, episode) {
-  return row?.title || row?.titleJapanese || `Épisode ${episode}`;
+function parseStreamingEpisodeNumber(value) {
+  const m = String(value || "").match(/(?:episode|ep\.?)\s*(\d+(?:\.\d+)?)/i);
+  return m ? Number(m[1]) : null;
 }
-
-function buildVideos(hyak, ani, episodeRows = [], seasonNumber = 1) {
-  if (normalizeHyakanimeType(hyak) === "movie") return [];
-
-  const total = Number(
-    hyak?.NbEpisodes ||
-    ani?.episodes ||
-    episodeRows.length ||
-    0
-  );
-
+function streamingRows(media) {
+  return (media?.streamingEpisodes || []).map(row => ({
+    number: parseStreamingEpisodeNumber(row?.title),
+    title: row?.title || null,
+    image: row?.thumbnail || null
+  })).filter(r => r.number != null);
+}
+function pickEpisodeTitle(titles, preferred="auto") {
+  if (!titles || typeof titles !== "object") return null;
+  if (preferred === "en") return titles.en || titles["en-US"] || titles.en_us || titles["x-jat"] || null;
+  if (preferred === "jp") return titles.ja || titles["ja-JP"] || titles.ja_jp || titles["x-jat"] || null;
+  if (preferred === "romaji") return titles["x-jat"] || titles.en || titles.ja || null;
+  return titles.fr || titles["fr-FR"] || titles.en || titles["en-US"] || titles["x-jat"] || titles.ja || null;
+}
+function deriveSeasonNumber(media) {
+  const text = [media?.title?.userPreferred, media?.title?.english, media?.title?.romaji, ...(media?.synonyms || [])]
+    .filter(Boolean).join(" ");
+  for (const pattern of [/\bseason\s*(\d+)\b/i, /\b(\d+)(?:st|nd|rd|th)\s+season\b/i, /\bsaison\s*(\d+)\b/i, /\bpart\s*(\d+)\b/i]) {
+    const m = text.match(pattern);
+    const n = Number(m?.[1] || 0);
+    if (n >= 1 && n <= 30) return n;
+  }
+  const hasPrequel = (media?.relations?.edges || []).some(e => e?.relationType === "PREQUEL" && e?.node?.format !== "MOVIE");
+  return hasPrequel ? 2 : 1;
+}
+function buildVideos(media, aniZipPayload, config={}) {
+  if (isMovie(media)) return [];
+  const zipRows = episodeRowsFromAniZip(aniZipPayload);
+  const streamRows = streamingRows(media);
+  const seasonNumber = deriveSeasonNumber(media);
+  const total = Number(media?.episodes || aniZipPayload?.episodeCount || zipRows.length || 0);
   if (!Number.isFinite(total) || total <= 0) return [];
-
-  const fallbackThumbnail =
-    ani?.bannerImage ||
-    hyak?.banner ||
-    hyak?.image ||
-    ani?.coverImage?.extraLarge ||
-    ani?.coverImage?.large;
+  const fallback = media?.bannerImage || media?.coverImage?.extraLarge || media?.coverImage?.large;
 
   return Array.from({ length: Math.min(total, 2000) }, (_, index) => {
-    const episode = index + 1;
-
-    const row =
-      episodeRows.find((item) => Number(item?.number) === episode) ||
-      episodeRows.find((item) => Number(item?.relativeNumber) === episode) ||
-      episodeRows[index] ||
-      null;
-
-    const released =
-      row?.airDate && !Number.isNaN(Date.parse(row.airDate))
-        ? new Date(row.airDate).toISOString()
-        : undefined;
-
+    const absolute = index + 1;
+    const zip = zipRows.find(r => r.absolute === absolute) || zipRows[index] || null;
+    const stream = streamRows.find(r => Number(r.number) === absolute) || null;
+    const epSeason = Number(zip?.seasonNumber || seasonNumber || 1);
+    const epNumber = Number(zip?.episodeNumber || absolute);
+    const title = pickEpisodeTitle(zip?.title, config.titleLanguage) || stream?.title || `Épisode ${epNumber}`;
+    const released = zip?.airDate && !Number.isNaN(Date.parse(zip.airDate))
+      ? new Date(zip.airDate).toISOString()
+      : undefined;
     return {
-      id: `${hyakId(hyak.id)}:${seasonNumber}:${episode}`,
-      title: episodeTitle(row, episode),
-      season: Number(row?.seasonNumber || seasonNumber || 1),
-      episode,
+      id: `${anilistId(media.id)}:${epSeason}:${epNumber}`,
+      title,
+      season: epSeason,
+      episode: epNumber,
       released,
-      thumbnail: row?.thumbnail || fallbackThumbnail,
-      overview:
-        row?.synopsis ||
-        `Épisode ${episode} de ${pickHyakanimeTitle(hyak)}.`
+      thumbnail: zip?.image || stream?.image || fallback,
+      overview: zip?.overview || `Épisode ${epNumber} de ${pickTitle(media, config.titleLanguage)}.`
     };
   });
 }
-
-function toFullMeta(
-  hyak,
-  ani = null,
-  stats = null,
-  config = {},
-  enrichment = {}
-) {
-  const type = normalizeHyakanimeType(hyak);
-  const seasonNumber = Number(enrichment?.seasonNumber || 1);
-  const episodeRows = Array.isArray(enrichment?.episodes)
-    ? enrichment.episodes
-    : [];
-
-  let description =
-    String(hyak?.synopsis || "").trim() ||
-    stripHtml(ani?.description) ||
-    "Fiche Hyakanime.";
-
-  if (config.showStats !== false && stats && typeof stats.UsersAdd === "number") {
-    description += `\n\nAjouté par ${stats.UsersAdd.toLocaleString("fr-FR")} utilisateurs Hyakanime.`;
-  }
-
-  const studios = [
-    ...(Array.isArray(hyak?.studios) ? hyak.studios : hyak?.studios ? [hyak.studios] : []),
-    ...((ani?.studios?.nodes || []).map((studio) => studio.name))
-  ].filter(Boolean);
-
-  const totalEpisodes = Number(
-    hyak?.NbEpisodes ||
-    ani?.episodes ||
-    episodeRows.length ||
-    0
-  );
-
+function toFullMeta(media, aniZipPayload=null, config={}) {
+  const studios = media?.studios?.nodes?.map(s => s.name).filter(Boolean) || [];
+  const seasonNumber = deriveSeasonNumber(media);
+  const rows = episodeRowsFromAniZip(aniZipPayload);
+  const totalEpisodes = Number(media?.episodes || aniZipPayload?.episodeCount || rows.length || 0);
   const meta = {
-    id: hyakId(hyak.id),
-    type: "hyakanime",
-    name: pickHyakanimeTitle(hyak, config.titleLanguage),
-    poster:
-      hyak?.image ||
-      ani?.coverImage?.extraLarge ||
-      ani?.coverImage?.large,
-    background:
-      ani?.bannerImage ||
-      hyak?.banner ||
-      hyak?.image ||
-      ani?.coverImage?.extraLarge,
-    description,
-    genres: mergeGenres(hyak, ani),
-    year: hyak?.start?.year || ani?.seasonYear || ani?.startDate?.year,
+    id: anilistId(media.id),
+    type: "anime",
+    name: pickTitle(media, config.titleLanguage),
+    poster: media?.coverImage?.extraLarge || media?.coverImage?.large,
+    background: media?.bannerImage || media?.coverImage?.extraLarge,
+    description: stripHtml(media?.description) || "Fiche AniList.",
+    genres: Array.isArray(media?.genres) ? media.genres : [],
+    year: media?.seasonYear || media?.startDate?.year,
     releaseInfo: [
-      hyak?.type || ani?.format,
+      media?.format,
       totalEpisodes ? `${totalEpisodes} épisodes` : null,
       seasonNumber > 1 ? `Saison ${seasonNumber}` : null,
-      ani?.season && ani?.seasonYear
-        ? `${ani.season} ${ani.seasonYear}`
-        : null
+      media?.season && media?.seasonYear ? `${media.season} ${media.seasonYear}` : null,
+      media?.averageScore ? `${media.averageScore}%` : null
     ].filter(Boolean).join(" • "),
-    website: `https://hyakanime.fr/anime/${hyak.id}`
+    website: `https://anilist.co/anime/${media.id}`
   };
-
-  if (studios.length) meta.director = [...new Set(studios)].join(", ");
-
-  if (type === "series") {
-    meta.videos = buildVideos(
-      hyak,
-      ani,
-      episodeRows,
-      seasonNumber
-    );
-  }
-
+  if (studios.length) meta.director = studios.join(", ");
+  if (!isMovie(media)) meta.videos = buildVideos(media, aniZipPayload, config);
   return meta;
 }
-
-module.exports = {
-  stripHtml,
-  pickHyakanimeTitle,
-  hyakId,
-  parseHyakId,
-  normalizeHyakanimeType,
-  deriveSeason,
-  toPreviewMeta,
-  toFullMeta
-};
+module.exports = { parseAniListId, toPreviewMeta, toFullMeta };

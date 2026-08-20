@@ -1,573 +1,186 @@
 const express = require("express");
 const path = require("path");
 const { addonBuilder, getRouter } = require("stremio-addon-sdk");
-
-const {
-  API_BASE,
-  explore,
-  getAnime,
-  getAnimeStats,
-  getRateLimitState
-} = require("./hyakanime");
-
-const {
-  ANILIST_API,
-  findBestMatch,
-  deriveSeasonNumber
-} = require("./anilist");
-
-const {
-  KITSU_API,
-  getEpisodesByMalId
-} = require("./kitsu");
-
-const {
-  parseHyakId,
-  normalizeHyakanimeType,
-  deriveSeason,
-  toPreviewMeta,
-  toFullMeta
-} = require("./mappers");
+const { ANILIST_API, getCatalog, getMedia, smokeTest } = require("./anilist");
+const { ANIZIP_API, getEpisodes: getAniZipEpisodes } = require("./anizip");
+const { parseAniListId, toPreviewMeta, toFullMeta } = require("./mappers");
 
 const PORT = Number(process.env.PORT || 7000);
 const app = express();
-
-app.use((req, res, next) => {
-  const started = Date.now();
-  console.log(`[http] ${req.method} ${req.originalUrl}`);
-
-  res.on("finish", () => {
-    console.log(
-      `[http] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - started}ms)`
-    );
-  });
-
-  next();
-});
 
 const DEFAULT_CONFIG = Object.freeze({
   titleLanguage: "auto",
   includeSeries: true,
   includeMovies: true,
-  showStats: true,
-  seasonYearsBack: 2
+  seasonYearsBack: 4
 });
 
-const BASE_GENRES = [
-  "Action",
-  "Adventure",
-  "Comedy",
-  "Drama",
-  "Ecchi",
-  "Fantasy",
-  "Horror",
-  "Mahou Shoujo",
-  "Mecha",
-  "Music",
-  "Mystery",
-  "Psychological",
-  "Romance",
-  "Sci-Fi",
-  "Slice of Life",
-  "Sports",
-  "Supernatural",
-  "Thriller"
-];
+const GENRES = ["Action","Adventure","Comedy","Drama","Ecchi","Fantasy","Horror","Mahou Shoujo","Mecha","Music","Mystery","Psychological","Romance","Sci-Fi","Slice of Life","Sports","Supernatural","Thriller"];
+const SEASONS = ["WINTER","SPRING","SUMMER","FALL"];
 
-const SEASONS = ["WINTER", "SPRING", "SUMMER", "FALL"];
-
-function sanitizeConfig(input = {}) {
-  const languages = new Set(["auto", "fr", "en", "romaji", "jp"]);
+function sanitizeConfig(input={}) {
+  const languages = new Set(["auto","en","romaji","jp"]);
   const yearsBack = Number(input.seasonYearsBack);
-
   return {
-    titleLanguage: languages.has(input.titleLanguage)
-      ? input.titleLanguage
-      : DEFAULT_CONFIG.titleLanguage,
-    includeSeries:
-      typeof input.includeSeries === "boolean"
-        ? input.includeSeries
-        : DEFAULT_CONFIG.includeSeries,
-    includeMovies:
-      typeof input.includeMovies === "boolean"
-        ? input.includeMovies
-        : DEFAULT_CONFIG.includeMovies,
-    showStats:
-      typeof input.showStats === "boolean"
-        ? input.showStats
-        : DEFAULT_CONFIG.showStats,
-    seasonYearsBack:
-      Number.isFinite(yearsBack)
-        ? Math.max(0, Math.min(5, Math.floor(yearsBack)))
-        : DEFAULT_CONFIG.seasonYearsBack
+    titleLanguage: languages.has(input.titleLanguage) ? input.titleLanguage : DEFAULT_CONFIG.titleLanguage,
+    includeSeries: typeof input.includeSeries === "boolean" ? input.includeSeries : DEFAULT_CONFIG.includeSeries,
+    includeMovies: typeof input.includeMovies === "boolean" ? input.includeMovies : DEFAULT_CONFIG.includeMovies,
+    seasonYearsBack: Number.isFinite(yearsBack) ? Math.max(0, Math.min(10, Math.floor(yearsBack))) : DEFAULT_CONFIG.seasonYearsBack
   };
 }
-
-function encodeConfig(config) {
-  return Buffer.from(JSON.stringify(sanitizeConfig(config)), "utf8").toString("base64url");
-}
-
+function encodeConfig(config) { return Buffer.from(JSON.stringify(sanitizeConfig(config)), "utf8").toString("base64url"); }
 function decodeConfig(value) {
-  try {
-    return sanitizeConfig(
-      JSON.parse(Buffer.from(value, "base64url").toString("utf8"))
-    );
-  } catch {
-    return DEFAULT_CONFIG;
-  }
+  try { return sanitizeConfig(JSON.parse(Buffer.from(value, "base64url").toString("utf8"))); }
+  catch { return DEFAULT_CONFIG; }
 }
-
-function seasonLabel(season) {
-  return {
-    WINTER: "Winter",
-    SPRING: "Spring",
-    SUMMER: "Summer",
-    FALL: "Fall"
-  }[season];
-}
-
+function seasonLabel(s) { return ({WINTER:"Winter",SPRING:"Spring",SUMMER:"Summer",FALL:"Fall"})[s]; }
 function seasonalOptions(config) {
-  const currentYear = new Date().getUTCFullYear();
-  const values = [];
-
-  for (let year = currentYear; year >= currentYear - config.seasonYearsBack; year -= 1) {
-    for (const season of SEASONS) {
-      values.push(`${seasonLabel(season)} ${year}`);
-    }
-  }
-
-  return values;
+  const y = new Date().getUTCFullYear();
+  const out = [];
+  for (let year=y; year>=y-config.seasonYearsBack; year--) for (const s of SEASONS) out.push(`${seasonLabel(s)} ${year}`);
+  return out;
 }
-
-function seriesFilterOptions(config) {
-  return [
-    "Tout",
-    "En cours",
-    "À venir",
-    ...seasonalOptions(config),
-    ...BASE_GENRES
-  ];
+function seriesFilters(config) { return ["Tout","En cours","À venir","Populaires","Tendances",...seasonalOptions(config),...GENRES]; }
+function movieFilters(config) {
+  const y = new Date().getUTCFullYear();
+  const years = Array.from({length: config.seasonYearsBack+1}, (_,i)=>String(y-i));
+  return ["Tout","Populaires","Tendances",...years,...GENRES];
 }
-
-function movieFilterOptions() {
-  return ["Tout", ...BASE_GENRES];
-}
-
-function parseFilter(value) {
-  if (!value || value === "Tout") return {};
-
-  if (value === "En cours") return { status: 1 };
-  if (value === "À venir") return { status: 2 };
-
-  const seasonMatch = /^(Winter|Spring|Summer|Fall)\s+(\d{4})$/.exec(value);
-  if (seasonMatch) {
-    return {
-      season: seasonMatch[1].toUpperCase(),
-      year: Number(seasonMatch[2])
-    };
-  }
-
-  if (BASE_GENRES.includes(value)) {
-    return { genre: value };
-  }
-
+function parseFilter(value,isMovie=false) {
+  if (!value || value==="Tout") return {};
+  if (value==="En cours") return {status:"RELEASING"};
+  if (value==="À venir") return {status:"NOT_YET_RELEASED"};
+  if (value==="Populaires") return {sort:["POPULARITY_DESC"]};
+  if (value==="Tendances") return {sort:["TRENDING_DESC"]};
+  if (isMovie && /^\d{4}$/.test(value)) return {seasonYear:Number(value)};
+  const m = /^(Winter|Spring|Summer|Fall)\s+(\d{4})$/.exec(value);
+  if (m) return {season:m[1].toUpperCase(),seasonYear:Number(m[2])};
+  if (GENRES.includes(value)) return {genre:value};
   return {};
 }
 
-function normalizeGenre(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function matchesFilter(anime, filter, wantedType) {
-  if (normalizeHyakanimeType(anime) !== wantedType) return false;
-
-  if (filter.status && Number(anime?.status) !== filter.status) {
-    return false;
-  }
-
-  if (filter.year && Number(anime?.start?.year) !== filter.year) {
-    return false;
-  }
-
-  if (filter.season && deriveSeason(anime) !== filter.season) {
-    return false;
-  }
-
-  if (filter.genre) {
-    const genres = Array.isArray(anime?.genre) ? anime.genre : [];
-    if (!genres.some((genre) => normalizeGenre(genre) === normalizeGenre(filter.genre))) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function normalizeRawType(anime) {
-  const raw = String(anime?.type || "").trim().toLowerCase();
-
-  if (raw.includes("movie") || raw.includes("film")) return "movie";
-  if (raw) return "series";
-
-  // /explore does not always expose type. Default to series for unknown rows;
-  // movie catalog will only keep explicit movies to avoid false positives.
-  return "unknown";
-}
-
-function matchesExploreFilter(anime, filter, wantedType) {
-  const rawType = normalizeRawType(anime);
-
-  if (wantedType === "movie") {
-    if (rawType !== "movie") return false;
-  } else {
-    if (rawType === "movie") return false;
-  }
-
-  if (filter.status && anime?.status != null) {
-    if (Number(anime.status) !== filter.status) return false;
-  }
-
-  if (filter.year && anime?.start?.year != null) {
-    if (Number(anime.start.year) !== filter.year) return false;
-  }
-
-  if (filter.season) {
-    const season = deriveSeason(anime);
-    if (season && season !== filter.season) return false;
-  }
-
-  if (filter.genre && Array.isArray(anime?.genre)) {
-    const genres = anime.genre.map(normalizeGenre);
-    if (!genres.includes(normalizeGenre(filter.genre))) return false;
-  }
-
-  // Missing filter fields are not grounds to discard a Hyakanime result here.
-  // The catalog must remain Hyakanime-first and avoid /anime/:id storms.
-  return true;
-}
-
-async function collectHyakanimeCatalog({
-  search = "",
-  skip = 0,
-  wantedType,
-  filter = {},
-  pageSize = 20,
-  maxExplorePages = 6
-}) {
-  const targetCount = skip + pageSize;
-  const matches = [];
-  const seen = new Set();
-
-  for (let page = 1; page <= maxExplorePages && matches.length < targetCount; page += 1) {
-    let raw;
-
-    try {
-      raw = await explore({ search, page });
-    } catch (error) {
-      if (String(error?.message || "").startsWith("HYAKANIME_RATE_LIMITED:")) {
-        console.warn(`[catalog] Hyakanime rate limited while reading page ${page}`);
-        break;
-      }
-      throw error;
-    }
-
-    if (!Array.isArray(raw) || raw.length === 0) break;
-
-    for (const anime of raw) {
-      if (!anime?.id || seen.has(anime.id)) continue;
-      seen.add(anime.id);
-
-      if (matchesExploreFilter(anime, filter, wantedType)) {
-        matches.push(anime);
-        if (matches.length >= targetCount) break;
-      }
-    }
-  }
-
-  return matches.slice(skip, skip + pageSize);
-}
-
-function buildAddon(configInput = DEFAULT_CONFIG) {
+function buildAddon(configInput=DEFAULT_CONFIG) {
   const config = sanitizeConfig(configInput);
   const catalogs = [];
-
-  if (config.includeSeries) {
-    catalogs.push({
-      type: "hyakanime",
-      id: "hyakanime-series",
-      name: "Séries",
-      extra: [
-        {
-          name: "genre",
-          isRequired: false,
-          options: seriesFilterOptions(config)
-        },
-        { name: "search", isRequired: false },
-        { name: "skip", isRequired: false }
-      ]
-    });
-  }
-
-  if (config.includeMovies) {
-    catalogs.push({
-      type: "hyakanime",
-      id: "hyakanime-movies",
-      name: "Films",
-      extra: [
-        {
-          name: "genre",
-          isRequired: false,
-          options: movieFilterOptions()
-        },
-        { name: "search", isRequired: false },
-        { name: "skip", isRequired: false }
-      ]
-    });
-  }
+  if (config.includeSeries) catalogs.push({
+    type:"anime", id:"anilist-series", name:"Séries",
+    extra:[
+      {name:"genre",isRequired:false,options:seriesFilters(config)},
+      {name:"search",isRequired:false},
+      {name:"skip",isRequired:false}
+    ]
+  });
+  if (config.includeMovies) catalogs.push({
+    type:"anime", id:"anilist-movies", name:"Films",
+    extra:[
+      {name:"genre",isRequired:false,options:movieFilters(config)},
+      {name:"search",isRequired:false},
+      {name:"skip",isRequired:false}
+    ]
+  });
 
   const manifest = {
-    id: "fr.hyakanime.catalog",
-    version: "1.7.1",
-    name: "Hyakanime",
-    description:
-      "Catalogue Hyakanime pour Stremio, enrichi avec AniList.",
-    logo: "https://cdn-hyakanime.s3.eu-west-3.amazonaws.com/logo-hyakanime.png",
-    resources: ["catalog", "meta"],
-    types: ["hyakanime"],
-    idPrefixes: ["hyakanime:"],
+    id:"fr.azks.anilist",
+    version:"2.0.0",
+    name:"AniList",
+    description:"Catalogue anime AniList pour Stremio avec métadonnées d'épisodes AniZip.",
+    logo:"https://anilist.co/img/icons/android-chrome-512x512.png",
+    resources:["catalog","meta"],
+    types:["anime"],
+    idPrefixes:["anilist:"],
     catalogs,
-    behaviorHints: {
-      configurable: true,
-      configurationRequired: false
-    }
+    behaviorHints:{configurable:true,configurationRequired:false}
   };
 
   const builder = new addonBuilder(manifest);
 
-  builder.defineCatalogHandler(async (args) => {
+  builder.defineCatalogHandler(async args => {
     try {
       const skip = Math.max(0, Number(args?.extra?.skip || 0));
-      const search = String(args?.extra?.search || "").trim();
-      const filter = parseFilter(String(args?.extra?.genre || ""));
+      const perPage = 50;
+      const page = Math.floor(skip/perPage)+1;
+      const offset = skip%perPage;
+      const search = String(args?.extra?.search || "").trim() || undefined;
+      const isMovie = args.id === "anilist-movies";
+      const filter = parseFilter(String(args?.extra?.genre || ""), isMovie);
 
-      const wantedType =
-        args.id === "hyakanime-movies"
-          ? "movie"
-          : "series";
-
-      const results = await collectHyakanimeCatalog({
+      const result = await getCatalog({
+        page, perPage,
+        format:isMovie ? "MOVIE" : "TV",
         search,
-        skip,
-        wantedType,
-        filter,
-        pageSize: 20
+        season:filter.season,
+        seasonYear:filter.seasonYear,
+        genre:filter.genre,
+        status:filter.status,
+        sort: search ? ["SEARCH_MATCH"] : filter.sort || ["POPULARITY_DESC"]
       });
 
-      console.log(
-        `[catalog] source=hyakanime id=${args.id} genre=${args?.extra?.genre || "Tout"} ` +
-        `search=${search || "-"} skip=${skip} returned=${results.length}`
-      );
-
-      return {
-        metas: results.map((anime) => toPreviewMeta(anime, config))
-      };
+      const media = Array.isArray(result?.media) ? result.media.slice(offset) : [];
+      return { metas: media.map(item => toPreviewMeta(item, config)) };
     } catch (error) {
       console.error("[catalog]", error?.stack || error);
       return { metas: [] };
     }
   });
 
-  builder.defineMetaHandler(async (args) => {
-    const animeId = parseHyakId(args.id);
-    if (!animeId) return { meta: null };
-
+  builder.defineMetaHandler(async args => {
+    const id = parseAniListId(args.id);
+    if (!id) return {meta:null};
     try {
-      const hyak = await getAnime(animeId);
-      if (!hyak) return { meta: null };
-
-      const [ani, stats] = await Promise.all([
-        findBestMatch(hyak),
-        config.showStats
-          ? getAnimeStats(animeId).catch(() => null)
-          : Promise.resolve(null)
-      ]);
-
-      let seasonNumber = 1;
-      let episodes = [];
-      let kitsuId = null;
-
-      if (ani) {
-        const [resolvedSeason, kitsu] = await Promise.all([
-          deriveSeasonNumber(ani, hyak).catch(() => 1),
-          ani.idMal
-            ? getEpisodesByMalId(ani.idMal).catch(() => ({ kitsuId: null, episodes: [] }))
-            : Promise.resolve({ kitsuId: null, episodes: [] })
-        ]);
-
-        seasonNumber = resolvedSeason;
-        kitsuId = kitsu?.kitsuId || null;
-        episodes = Array.isArray(kitsu?.episodes) ? kitsu.episodes : [];
-      }
-
-      console.log(
-        `[meta] hyakanime=${animeId} anilist=${ani?.id || "no-match"} ` +
-        `mal=${ani?.idMal || "none"} kitsu=${kitsuId || "none"} ` +
-        `season=${seasonNumber} episodes=${episodes.length}`
-      );
-
-      return {
-        meta: toFullMeta(
-          hyak,
-          ani,
-          stats,
-          config,
-          { seasonNumber, episodes }
-        )
-      };
+      const media = await getMedia(id);
+      if (!media) return {meta:null};
+      const aniZipPayload = media.format !== "MOVIE"
+        ? await getAniZipEpisodes(id).catch(()=>null)
+        : null;
+      return { meta: toFullMeta(media, aniZipPayload, config) };
     } catch (error) {
       console.error("[meta]", error?.stack || error);
-      return { meta: null };
+      return {meta:null};
     }
   });
 
   return builder.getInterface();
 }
 
-// Configuration routes before static/router.
-app.get("/", (_req, res) => {
-  res.redirect("/configure");
+app.get("/", (_req,res)=>res.redirect("/configure"));
+app.get("/configure", (_req,res)=>{
+  res.setHeader("Content-Type","text/html; charset=utf-8");
+  res.setHeader("Content-Disposition","inline");
+  res.sendFile(path.join(process.cwd(),"public","configure.html"));
 });
-
-app.get("/configure", (_req, res) => {
-  res.status(200);
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Content-Disposition", "inline");
-  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
+app.get("/c/:config/configure", (_req,res)=>{
+  res.setHeader("Content-Type","text/html; charset=utf-8");
+  res.setHeader("Content-Disposition","inline");
+  res.sendFile(path.join(process.cwd(),"public","configure.html"));
 });
-
-app.get("/c/:config/configure", (_req, res) => {
-  res.status(200);
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Content-Disposition", "inline");
-  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
-});
-
-app.get("/health", (_req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-  res.json({
-    status: "ok",
-    addon: "Hyakanime",
-    version: "1.7.1",
-    catalogSource: "Hyakanime",
-    enrichmentSource: "AniList",
-    hyakanimeApi: API_BASE,
-    aniListApi: ANILIST_API,
-    kitsuApi: KITSU_API,
-    hyakanimeRateLimit: getRateLimitState()
-  });
-});
-
-app.get("/debug/rate-limit", (_req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-  res.json({
-    ok: true,
-    hyakanime: getRateLimitState()
-  });
-});
-
-app.get("/debug/hyakanime", async (_req, res) => {
-  try {
-    const raw = await explore({ search: "Solo Leveling", page: 1 });
-    const hydrated = await hydrateExploreResults(
-      Array.isArray(raw) ? raw.slice(0, 5) : [],
-      4
-    );
-
-    res.setHeader("Cache-Control", "no-store");
-    res.json({
-      ok: true,
-      source: "Hyakanime",
-      count: hydrated.length,
-      sample: hydrated.map((anime) => ({
-        id: anime.id,
-        title: anime.title || anime.titleEN || anime.romanji,
-        type: anime.type,
-        status: anime.status,
-        genres: anime.genre,
-        episodes: anime.NbEpisodes,
-        start: anime.start
-      }))
-    });
-  } catch (error) {
-    res.status(500).json({
-      ok: false,
-      error: error?.message || String(error)
-    });
-  }
-});
-
-app.get("/debug/match/:id", async (req, res) => {
-  try {
-    const hyak = await getAnime(req.params.id);
-    const ani = await findBestMatch(hyak);
-
-    res.setHeader("Cache-Control", "no-store");
-    res.json({
-      ok: true,
-      hyakanime: {
-        id: hyak?.id,
-        title: hyak?.title,
-        titleEN: hyak?.titleEN,
-        romanji: hyak?.romanji
-      },
-      anilist: ani
-        ? {
-            id: ani.id,
-            title: ani.title,
-            format: ani.format,
-            season: ani.season,
-            seasonYear: ani.seasonYear,
-            episodes: ani.episodes,
-            genres: ani.genres
-          }
-        : null
-    });
-  } catch (error) {
-    res.status(500).json({
-      ok: false,
-      error: error?.message || String(error)
-    });
-  }
-});
-
-app.use(express.static("public", {
-  index: false,
-  fallthrough: true,
-  setHeaders(res, filePath) {
-    if (filePath.endsWith(".html")) {
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("Content-Disposition", "inline");
-    }
-  }
+app.get("/health", (_req,res)=>res.json({
+  status:"ok",addon:"AniList",version:"2.0.0",
+  catalogSource:"AniList",episodeSource:"AniZip",
+  aniListApi:ANILIST_API,aniZipApi:ANIZIP_API
 }));
-
-const defaultInterface = buildAddon(DEFAULT_CONFIG);
-const defaultRouter = getRouter(defaultInterface);
-
-app.use((req, res, next) => {
-  if (req.path.startsWith("/c/")) return next();
-  return defaultRouter(req, res, next);
+app.get("/debug/anilist", async (_req,res)=>{
+  try {
+    const items = await smokeTest();
+    res.json({ok:true,count:items.length,sample:items.map(i=>({id:i.id,title:i?.title?.userPreferred||i?.title?.english||i?.title?.romaji,format:i.format}))});
+  } catch (error) { res.status(500).json({ok:false,error:error?.message||String(error)}); }
+});
+app.get("/debug/anizip/:id", async (req,res)=>{
+  try {
+    const payload = await getAniZipEpisodes(Number(req.params.id));
+    const eps = payload?.episodes && typeof payload.episodes==="object" ? Object.entries(payload.episodes) : [];
+    res.json({ok:true,anilistId:Number(req.params.id),episodeCount:eps.length,sample:eps.slice(0,3).map(([number,e])=>({number,title:e?.title,image:e?.image,overview:e?.overview,airDate:e?.airDate}))});
+  } catch (error) { res.status(500).json({ok:false,error:error?.message||String(error)}); }
 });
 
-app.use("/c/:config", (req, res, next) => {
-  const config = decodeConfig(req.params.config);
-  return getRouter(buildAddon(config))(req, res, next);
-});
+app.use(express.static("public",{index:false,fallthrough:true}));
+const defaultRouter = getRouter(buildAddon(DEFAULT_CONFIG));
+app.use((req,res,next)=> req.path.startsWith("/c/") ? next() : defaultRouter(req,res,next));
+app.use("/c/:config",(req,res,next)=> getRouter(buildAddon(decodeConfig(req.params.config)))(req,res,next));
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT,"0.0.0.0",()=>{
   const defaultConfig = encodeConfig(DEFAULT_CONFIG);
-  console.log(`Hyakanime API: ${API_BASE}`);
-  console.log(`AniList enrichment API: ${ANILIST_API}`);
+  console.log(`AniList API: ${ANILIST_API}`);
+  console.log(`AniZip API: ${ANIZIP_API}`);
   console.log(`Configure: http://127.0.0.1:${PORT}/configure`);
   console.log(`Addon: http://127.0.0.1:${PORT}/c/${defaultConfig}/manifest.json`);
 });

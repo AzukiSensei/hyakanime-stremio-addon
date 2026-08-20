@@ -1,69 +1,24 @@
-# Hyakanime Stremio Addon — v1.7.1
+# AniList Stremio Addon — v2.0.0
 
-## Correctif 429 Hyakanime
-
-Les logs v1.7.0 ont confirmé un rate limit Hyakanime :
+Architecture :
 
 ```text
-429 Too Many Requests
-retryAfter ≈ 10 minutes
+AniList = catalogue + recherche + fiches + IDs
+AniZip  = épisodes + images + dates + synopsis épisode
 ```
 
-La v1.7.1 évite désormais les rafales de requêtes.
+Hyakanime, Kitsu et Jikan sont supprimés.
 
-### Catalogues
+Endpoints :
+- `/configure`
+- `/health`
+- `/debug/anilist`
+- `/debug/anizip/<anilist_id>`
 
-Les catalogues utilisent uniquement :
-
+Variables :
 ```text
-GET /explore
+PORT=7000
+ANILIST_CACHE_TTL_MS=900000
+ANIZIP_API_BASE=https://hayase.ani.zip
+ANIZIP_CACHE_TTL_MS=3600000
 ```
-
-Ils ne font plus de `/anime/:id` par résultat.
-
-Une fiche complète Hyakanime n'est demandée que lorsque l'utilisateur ouvre
-une fiche dans Stremio.
-
-### Protection rate limit
-
-Le client Hyakanime possède maintenant :
-
-- déduplication des requêtes identiques en cours
-- cache frais 15 minutes
-- cache stale 6 heures
-- délai minimum entre requêtes
-- lecture de `retryAfter`
-- circuit breaker global pendant le cooldown
-- stale-cache fallback lors d'un 429
-
-Pendant un cooldown, l'addon n'essaie donc pas de marteler l'API.
-
-### Diagnostic
-
-```text
-/debug/rate-limit
-```
-
-Exemple :
-
-```json
-{
-  "ok": true,
-  "hyakanime": {
-    "blocked": true,
-    "retryAfter": 420,
-    "cacheEntries": 8,
-    "inFlight": 0
-  }
-}
-```
-
-## Variables
-
-```text
-CACHE_TTL_MS=900000
-STALE_CACHE_TTL_MS=21600000
-HYAKANIME_MIN_REQUEST_GAP_MS=250
-```
-
-Les fiches restent enrichies via AniList + Kitsu.

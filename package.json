@@ -1,8 +1,8 @@
 {
-  "name": "hyakanime-stremio-addon",
-  "version": "1.7.1",
+  "name": "anilist-stremio-addon",
+  "version": "2.0.0",
   "private": true,
-  "description": "Addon Stremio non officiel utilisant l'API publique Hyakanime V5.",
+  "description": "Addon Stremio anime alimenté par AniList, avec enrichissement épisode AniZip.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
