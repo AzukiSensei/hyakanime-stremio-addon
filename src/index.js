@@ -6,7 +6,8 @@ const {
   ANILIST_API,
   getCatalog,
   getMedia,
-  smokeTest
+  smokeTest,
+  debugBuildCatalogQuery
 } = require("./anilist");
 
 const {
@@ -22,7 +23,7 @@ const {
 } = require("./mappers");
 
 const PORT = Number(process.env.PORT || 7000);
-const VERSION = "2.1.1";
+const VERSION = "2.1.2";
 const app = express();
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -378,17 +379,24 @@ app.get("/health", async (_req, res) => {
 });
 
 app.get("/debug/catalog", async (_req, res) => {
+  const options = {
+    page: 1,
+    perPage: 10,
+    formats: ["TV"],
+    sort: ["POPULARITY_DESC"]
+  };
+
   try {
-    const result = await getCatalog({
-      page: 1,
-      perPage: 10,
-      formats: ["TV"],
-      sort: ["POPULARITY_DESC"]
-    });
+    const built = debugBuildCatalogQuery(options);
+    const result = await getCatalog(options);
 
     res.setHeader("Cache-Control", "no-store");
     res.json({
       ok: true,
+      version: VERSION,
+      request: {
+        variables: built.variables
+      },
       count: result?.media?.length || 0,
       pageInfo: result?.pageInfo || null,
       sample: (result?.media || []).map((item) => ({
@@ -405,6 +413,7 @@ app.get("/debug/catalog", async (_req, res) => {
   } catch (error) {
     res.status(500).json({
       ok: false,
+      version: VERSION,
       error: error?.message || String(error)
     });
   }

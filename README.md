@@ -1,12 +1,18 @@
-# AniList Stremio Addon — v2.1.1
+# AniList Stremio Addon — v2.1.2
 
-Fixes:
-- lightweight AniList catalog query
-- TV/ONA/OVA/SPECIAL merged with one `format_in` query
-- detailed fields fetched only when opening a media page
-- movie year filter uses start-date bounds instead of `seasonYear` alone
-- `/debug/catalog` tests the exact catalogue path
-- AniZip remains optional and degraded-safe
+Fix principal:
+- les filtres GraphQL AniList sont maintenant ajoutés dynamiquement
+- aucun opérateur absent n'est envoyé avec une valeur `null`
+- corrige `Illegal operator and value combination`
+
+Catalogue:
+- `/debug/catalog` teste exactement le chemin TV/Popularité
+- requête catalogue légère
+- détails seulement à l'ouverture d'une fiche
+
+AniZip:
+- reste optionnel
+- un 403 Cloudflare ne bloque pas AniList
 
 Debug:
 - `/health`

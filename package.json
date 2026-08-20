@@ -1,6 +1,6 @@
 {
   "name": "anilist-stremio-addon",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "description": "Addon Stremio anime alimenté par AniList, avec enrichissement épisode AniZip.",
   "main": "src/index.js",
