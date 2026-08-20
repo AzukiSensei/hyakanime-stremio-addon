@@ -1,45 +1,73 @@
-# Hyakanime Stremio Addon — v1.4.1
+# Hyakanime Stremio Addon — v1.5.0
 
-Version de diagnostic.
+## Architecture
 
-## Nouveautés
-
-- journalisation de chaque requête HTTP Stremio
-- erreurs `catalog` et `meta` détaillées dans les logs
-- endpoint `/debug/anilist`
-- endpoint `/debug/hyakanime`
-- `/health` affiche la version courante
-
-## Tests
-
-Après déploiement :
+Hyakanime est désormais la source canonique.
 
 ```text
-https://votre-domaine/health
-https://votre-domaine/debug/anilist
-https://votre-domaine/debug/hyakanime
+Stremio catalogue/search
+        ↓
+Hyakanime /explore
+        ↓
+Hyakanime /anime/:id
+        ↓
+ID Stremio = hyakanime:<id>
 ```
 
-`/debug/anilist` doit renvoyer :
-
-```json
-{
-  "ok": true,
-  "count": 5
-}
-```
-
-et quelques titres anime.
-
-Si `ok` vaut `false`, la réponse JSON contient l'erreur exacte renvoyée par AniList ou le réseau.
-
-## Logs
-
-Lorsqu'un catalogue est ouvert dans Stremio, Dokploy doit maintenant afficher par exemple :
+AniList ne remplace plus le catalogue. Il sert uniquement à enrichir les fiches :
 
 ```text
-[http] GET /catalog/hyakanime/hyakanime-series.json
-[http] GET /catalog/hyakanime/hyakanime-series.json -> 200
+Hyakanime fiche
+   + AniList matching
+   = fiche Stremio enrichie
 ```
 
-ainsi qu'une erreur `[catalog]` si le handler échoue.
+## Priorité des données
+
+```text
+ID principal        Hyakanime
+Titre               Hyakanime
+Synopsis            Hyakanime
+Poster              Hyakanime
+Streaming           Hyakanime
+Genres              Hyakanime + AniList
+Banner              AniList en priorité
+Nombre d'épisodes   Hyakanime, fallback AniList
+Studio              Hyakanime + AniList
+Saison / année      Hyakanime, AniList en complément
+```
+
+## Catalogues
+
+Type :
+
+```text
+Hyakanime
+```
+
+Catalogues :
+
+```text
+Séries
+Films
+```
+
+Filtres séries :
+
+```text
+Tout
+En cours
+À venir
+Winter / Spring / Summer / Fall par année
+Genres
+```
+
+Les résultats sont toujours collectés depuis Hyakanime puis filtrés.
+
+## Debug
+
+```text
+/health
+/debug/hyakanime
+/debug/match/<hyakanime-id>
+```

@@ -28,20 +28,24 @@ async function gql(query, variables = {}) {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      "User-Agent": "Hyakanime-Stremio-Addon/1.4"
+      "User-Agent": "Hyakanime-Stremio-Addon/1.5"
     },
     body: JSON.stringify({ query, variables }),
     signal: AbortSignal.timeout(12000)
   });
 
+  const raw = await response.text();
+
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`AniList ${response.status}: ${body.slice(0, 300)}`);
+    throw new Error(`AniList HTTP ${response.status}: ${raw.slice(0, 400)}`);
   }
 
-  const payload = await response.json();
+  const payload = JSON.parse(raw);
+
   if (payload.errors?.length) {
-    throw new Error(payload.errors.map((e) => e.message).join("; "));
+    throw new Error(
+      `AniList GraphQL: ${payload.errors.map((e) => e.message).join("; ")}`
+    );
   }
 
   return cacheSet(cacheKey, payload.data);
@@ -65,6 +69,7 @@ const MEDIA_FIELDS = `
   genres
   averageScore
   popularity
+  trending
   countryOfOrigin
   coverImage { extraLarge large medium color }
   bannerImage
@@ -72,77 +77,95 @@ const MEDIA_FIELDS = `
   externalLinks { site url type }
 `;
 
-async function getCatalog({
-  page = 1,
-  perPage = 50,
-  season,
-  seasonYear,
-  format,
-  search,
-  genre,
-  status,
-  sort = ["POPULARITY_DESC"]
-} = {}) {
+function normalizeTitle(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function titleCandidates(hyak) {
+  return [
+    hyak?.title,
+    hyak?.titleEN,
+    hyak?.romanji,
+    hyak?.titleJP
+  ].filter(Boolean);
+}
+
+async function searchMedia(title) {
   const query = `
-    query (
-      $page: Int,
-      $perPage: Int,
-      $season: MediaSeason,
-      $seasonYear: Int,
-      $format: MediaFormat,
-      $search: String,
-      $genre: String,
-      $status: MediaStatus,
-      $sort: [MediaSort]
-    ) {
-      Page(page: $page, perPage: $perPage) {
-        media(
-          type: ANIME,
-          season: $season,
-          seasonYear: $seasonYear,
-          format: $format,
-          search: $search,
-          genre: $genre,
-          status: $status,
-          sort: $sort,
-          isAdult: false
-        ) {
+    query ($search: String!) {
+      Page(page: 1, perPage: 8) {
+        media(type: ANIME, search: $search, sort: SEARCH_MATCH) {
           ${MEDIA_FIELDS}
         }
       }
     }
   `;
 
-  const data = await gql(query, {
-    page,
-    perPage,
-    season: season || null,
-    seasonYear: seasonYear || null,
-    format: format || null,
-    search: search || null,
-    genre: genre || null,
-    status: status || null,
-    sort
-  });
-
-  return data.Page;
+  const data = await gql(query, { search: title });
+  return data?.Page?.media || [];
 }
 
-async function getMedia(id) {
-  const query = `
-    query ($id: Int!) {
-      Media(id: $id, type: ANIME) {
-        ${MEDIA_FIELDS}
-      }
-    }
-  `;
+function scoreMatch(hyak, media) {
+  const hyakTitles = titleCandidates(hyak).map(normalizeTitle).filter(Boolean);
+  const aniTitles = [
+    media?.title?.userPreferred,
+    media?.title?.english,
+    media?.title?.romaji,
+    media?.title?.native,
+    ...(media?.synonyms || [])
+  ].map(normalizeTitle).filter(Boolean);
 
-  const data = await gql(query, { id: Number(id) });
-  return data.Media;
+  if (!hyakTitles.length || !aniTitles.length) return 0;
+
+  let score = 0;
+
+  for (const h of hyakTitles) {
+    for (const a of aniTitles) {
+      if (h === a) score = Math.max(score, 100);
+      else if (h.includes(a) || a.includes(h)) score = Math.max(score, 80);
+    }
+  }
+
+  const hyakYear = Number(hyak?.start?.year || 0);
+  const aniYear = Number(media?.seasonYear || media?.startDate?.year || 0);
+
+  if (score > 0 && hyakYear && aniYear) {
+    if (hyakYear === aniYear) score += 10;
+    else if (Math.abs(hyakYear - aniYear) > 1) score -= 20;
+  }
+
+  return score;
+}
+
+async function findBestMatch(hyak) {
+  const candidates = titleCandidates(hyak);
+
+  for (const title of candidates) {
+    try {
+      const results = await searchMedia(title);
+      if (!results.length) continue;
+
+      const ranked = results
+        .map((media) => ({ media, score: scoreMatch(hyak, media) }))
+        .sort((a, b) => b.score - a.score);
+
+      if (ranked[0]?.score >= 80) {
+        return ranked[0].media;
+      }
+    } catch {
+      // AniList enrichissement facultatif.
+    }
+  }
+
+  return null;
 }
 
 module.exports = {
   ANILIST_API,
-  getCatalog,
-  getMedia
+  findBestMatch
 };

@@ -1,6 +1,6 @@
 {
   "name": "hyakanime-stremio-addon",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "description": "Addon Stremio non officiel utilisant l'API publique Hyakanime V5.",
   "main": "src/index.js",

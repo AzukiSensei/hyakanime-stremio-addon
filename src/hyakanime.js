@@ -6,12 +6,10 @@ const cache = new Map();
 function getCached(key) {
   const entry = cache.get(key);
   if (!entry) return undefined;
-
   if (Date.now() > entry.expiresAt) {
     cache.delete(key);
     return undefined;
   }
-
   return entry.value;
 }
 
@@ -39,58 +37,31 @@ async function apiGet(path, params = {}) {
   const response = await fetch(url, {
     headers: {
       Accept: "application/json",
-      "User-Agent": "Hyakanime-Stremio-Addon/1.2"
+      "User-Agent": "Hyakanime-Stremio-Addon/1.5"
     },
     signal: AbortSignal.timeout(10000)
   });
 
+  const raw = await response.text();
+
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
     throw new Error(
-      `Hyakanime API ${response.status} ${response.statusText}: ${body.slice(0, 250)}`
+      `Hyakanime API ${response.status} ${response.statusText}: ${raw.slice(0, 300)}`
     );
   }
 
-  const value = await response.json();
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error(`Hyakanime returned invalid JSON: ${raw.slice(0, 300)}`);
+  }
+
   return setCached(cacheKey, value);
 }
 
 async function explore({ search = "", page = 1 } = {}) {
   return apiGet("/explore", { search, page });
-}
-
-async function explorePages({
-  search = "",
-  startPage = 1,
-  maxPages = 10,
-  wanted = 20,
-  predicate = () => true
-} = {}) {
-  const found = [];
-  const seen = new Set();
-
-  for (let page = startPage; page < startPage + maxPages; page += 1) {
-    const result = await explore({ search, page });
-
-    if (!Array.isArray(result) || result.length === 0) {
-      break;
-    }
-
-    for (const anime of result) {
-      if (!anime || anime.id == null || seen.has(anime.id)) continue;
-      seen.add(anime.id);
-
-      if (predicate(anime)) {
-        found.push(anime);
-      }
-
-      if (found.length >= wanted) {
-        return found;
-      }
-    }
-  }
-
-  return found;
 }
 
 async function getAnime(id) {
@@ -101,10 +72,51 @@ async function getAnimeStats(id) {
   return apiGet(`/anime/stats/${encodeURIComponent(String(id))}`);
 }
 
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+
+      try {
+        results[index] = await mapper(items[index], index);
+      } catch (error) {
+        results[index] = null;
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  );
+
+  return results;
+}
+
+async function hydrateExploreResults(items, concurrency = 6) {
+  if (!Array.isArray(items) || !items.length) return [];
+
+  const hydrated = await mapWithConcurrency(items, concurrency, async (item) => {
+    if (!item?.id) return null;
+
+    try {
+      const detail = await getAnime(item.id);
+      return { ...item, ...detail };
+    } catch {
+      return item;
+    }
+  });
+
+  return hydrated.filter(Boolean);
+}
+
 module.exports = {
   API_BASE,
   explore,
-  explorePages,
   getAnime,
-  getAnimeStats
+  getAnimeStats,
+  hydrateExploreResults
 };
