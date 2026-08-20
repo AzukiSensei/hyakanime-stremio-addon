@@ -1,64 +1,45 @@
-# Hyakanime Stremio Addon — v1.4.0
+# Hyakanime Stremio Addon — v1.4.1
 
-## Structure Stremio
+Version de diagnostic.
 
-Type personnalisé :
+## Nouveautés
 
-```text
-Hyakanime
-```
+- journalisation de chaque requête HTTP Stremio
+- erreurs `catalog` et `meta` détaillées dans les logs
+- endpoint `/debug/anilist`
+- endpoint `/debug/hyakanime`
+- `/health` affiche la version courante
 
-Catalogues :
+## Tests
 
-```text
-Séries
-Films
-```
-
-Filtres de Séries via `genre` :
+Après déploiement :
 
 ```text
-Tout
-En cours
-À venir
-Populaires
-Tendances
-Winter 2026
-Spring 2026
-Summer 2026
-Fall 2026
-...
-Action
-Adventure
-Comedy
-Drama
-Fantasy
-Romance
-Sci-Fi
-...
+https://votre-domaine/health
+https://votre-domaine/debug/anilist
+https://votre-domaine/debug/hyakanime
 ```
 
-## Métadonnées
+`/debug/anilist` doit renvoyer :
 
-- AniList fournit catalogue, images, genres, saison et nombre d'épisodes.
-- Hyakanime enrichit les fiches quand une correspondance est trouvée.
-- Le synopsis Hyakanime est prioritaire afin d'avoir du français quand disponible.
-- Les épisodes utilisent `bannerImage` AniList comme miniature, avec fallback couverture.
+```json
+{
+  "ok": true,
+  "count": 5
+}
+```
 
-## Configuration
+et quelques titres anime.
+
+Si `ok` vaut `false`, la réponse JSON contient l'erreur exacte renvoyée par AniList ou le réseau.
+
+## Logs
+
+Lorsqu'un catalogue est ouvert dans Stremio, Dokploy doit maintenant afficher par exemple :
 
 ```text
-/configure
-/c/<config>/configure
+[http] GET /catalog/hyakanime/hyakanime-series.json
+[http] GET /catalog/hyakanime/hyakanime-series.json -> 200
 ```
 
-Les routes sont servies explicitement en `text/html` avec `Content-Disposition: inline`.
-
-## Variables
-
-```text
-PORT=7000
-HYAKANIME_API_BASE=https://api-v5.hyakanime.fr
-CACHE_TTL_MS=300000
-ANILIST_CACHE_TTL_MS=300000
-```
+ainsi qu'une erreur `[catalog]` si le handler échoue.

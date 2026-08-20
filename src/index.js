@@ -23,6 +23,19 @@ const {
 const PORT = Number(process.env.PORT || 7000);
 const app = express();
 
+app.use((req, res, next) => {
+  const started = Date.now();
+  console.log(`[http] ${req.method} ${req.originalUrl}`);
+
+  res.on("finish", () => {
+    console.log(
+      `[http] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - started}ms)`
+    );
+  });
+
+  next();
+});
+
 const DEFAULT_CONFIG = Object.freeze({
   titleLanguage: "auto",
   includeSeries: true,
@@ -224,7 +237,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.4.0",
+    version: "1.4.1",
     name: "Hyakanime",
     description:
       "Catalogues anime Stremio alimentés par AniList et enrichis par Hyakanime.",
@@ -273,7 +286,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
         )
       };
     } catch (error) {
-      console.error("[catalog]", error);
+      console.error("[catalog]", error?.stack || error);
       return { metas: [] };
     }
   });
@@ -292,7 +305,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
         meta: aniListToFullMeta(media, config, hyak)
       };
     } catch (error) {
-      console.error("[meta]", error);
+      console.error("[meta]", error?.stack || error);
       return { meta: null };
     }
   });
@@ -319,10 +332,70 @@ app.get("/c/:config/configure", (req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "configure.html"));
 });
 
+app.get("/debug/anilist", async (_req, res) => {
+  try {
+    const result = await getAniListCatalog({
+      page: 1,
+      perPage: 5,
+      format: "TV",
+      sort: ["POPULARITY_DESC"]
+    });
+
+    res.json({
+      ok: true,
+      api: ANILIST_API,
+      count: result?.media?.length || 0,
+      sample: (result?.media || []).map((media) => ({
+        id: media.id,
+        title:
+          media?.title?.userPreferred ||
+          media?.title?.english ||
+          media?.title?.romaji,
+        format: media.format,
+        season: media.season,
+        seasonYear: media.seasonYear
+      }))
+    });
+  } catch (error) {
+    console.error("[debug/anilist]", error?.stack || error);
+    res.status(500).json({
+      ok: false,
+      api: ANILIST_API,
+      error: error?.message || String(error)
+    });
+  }
+});
+
+app.get("/debug/hyakanime", async (_req, res) => {
+  try {
+    const result = await explore({ search: "Solo Leveling", page: 1 });
+
+    res.json({
+      ok: true,
+      api: API_BASE,
+      count: Array.isArray(result) ? result.length : 0,
+      sample: Array.isArray(result)
+        ? result.slice(0, 5).map((anime) => ({
+            id: anime.id,
+            title: anime.title || anime.titleEN || anime.romanji || anime.titleJP
+          }))
+        : result
+    });
+  } catch (error) {
+    console.error("[debug/hyakanime]", error?.stack || error);
+    res.status(500).json({
+      ok: false,
+      api: API_BASE,
+      error: error?.message || String(error)
+    });
+  }
+});
+
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     addon: "Hyakanime",
+    version: "1.4.1",
     hyakanimeApi: API_BASE,
     aniListApi: ANILIST_API
   });
