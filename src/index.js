@@ -22,7 +22,7 @@ const {
 } = require("./mappers");
 
 const PORT = Number(process.env.PORT || 7000);
-const VERSION = "2.1.0";
+const VERSION = "2.1.1";
 const app = express();
 
 const DEFAULT_CONFIG = Object.freeze({
@@ -180,42 +180,26 @@ async function querySeriesCatalog(args, config) {
   const search = String(args?.extra?.search || "").trim() || undefined;
   const filter = parseFilter(String(args?.extra?.genre || ""), false);
 
-  // TV is primary. Optional extra formats get merged on first page.
   const formats = ["TV"];
   if (config.includeONA) formats.push("ONA");
   if (config.includeOVA) formats.push("OVA");
   if (config.includeSpecials) formats.push("SPECIAL");
 
-  const batches = await Promise.all(
-    formats.map((format) =>
-      getCatalog({
-        page,
-        perPage,
-        format,
-        search,
-        season: filter.season,
-        seasonYear: filter.seasonYear,
-        genre: filter.genre,
-        status: filter.status,
-        sort: search
-          ? ["SEARCH_MATCH"]
-          : filter.sort || sortFromConfig(config)
-      }).catch(() => ({ media: [] }))
-    )
-  );
+  const result = await getCatalog({
+    page,
+    perPage,
+    formats,
+    search,
+    season: filter.season,
+    seasonYear: filter.seasonYear,
+    genre: filter.genre,
+    status: filter.status,
+    sort: search
+      ? ["SEARCH_MATCH"]
+      : filter.sort || sortFromConfig(config)
+  });
 
-  const seen = new Set();
-  const merged = [];
-
-  for (const batch of batches) {
-    for (const media of batch?.media || []) {
-      if (!media?.id || seen.has(media.id)) continue;
-      seen.add(media.id);
-      merged.push(media);
-    }
-  }
-
-  return merged.slice(offset, offset + 50);
+  return (result?.media || []).slice(offset, offset + 50);
 }
 
 function buildAddon(configInput = DEFAULT_CONFIG) {
@@ -283,13 +267,15 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
         const search = String(args?.extra?.search || "").trim() || undefined;
         const filter = parseFilter(String(args?.extra?.genre || ""), true);
 
+        const year = filter.seasonYear;
         const result = await getCatalog({
           page,
           perPage,
-          format: "MOVIE",
+          formats: ["MOVIE"],
           search,
-          seasonYear: filter.seasonYear,
           genre: filter.genre,
+          startDateGreater: year ? Number(`${year}0101`) : undefined,
+          startDateLesser: year ? Number(`${year}1231`) : undefined,
           sort: search
             ? ["SEARCH_MATCH"]
             : filter.sort || sortFromConfig(config)
@@ -389,6 +375,39 @@ app.get("/health", async (_req, res) => {
     aniListApi: ANILIST_API,
     aniZipApi: ANIZIP_API
   });
+});
+
+app.get("/debug/catalog", async (_req, res) => {
+  try {
+    const result = await getCatalog({
+      page: 1,
+      perPage: 10,
+      formats: ["TV"],
+      sort: ["POPULARITY_DESC"]
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      count: result?.media?.length || 0,
+      pageInfo: result?.pageInfo || null,
+      sample: (result?.media || []).map((item) => ({
+        id: item.id,
+        title:
+          item?.title?.userPreferred ||
+          item?.title?.english ||
+          item?.title?.romaji,
+        format: item.format,
+        season: item.season,
+        seasonYear: item.seasonYear
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error?.message || String(error)
+    });
+  }
 });
 
 app.get("/debug/anizip/:id", async (req, res) => {

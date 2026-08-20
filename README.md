@@ -1,17 +1,14 @@
-# AniList Stremio Addon — v2.1.0
+# AniList Stremio Addon — v2.1.1
 
-Architecture:
-- AniList: catalogue, recherche, fiches, IDs
-- AniZip: enrichissement épisode optionnel
-
-Changes:
-- Stremio custom type is now `anilist` so Discover shows AniList
-- configuration page displays AniList logo
-- version and live health status at top
-- AniZip health/degraded state visible
-- extra config: ONA, OVA, Specials, default sort, AniZip toggle, episode-image preference
-- AniZip 403/Cloudflare does not break metadata; AniList remains fallback
+Fixes:
+- lightweight AniList catalog query
+- TV/ONA/OVA/SPECIAL merged with one `format_in` query
+- detailed fields fetched only when opening a media page
+- movie year filter uses start-date bounds instead of `seasonYear` alone
+- `/debug/catalog` tests the exact catalogue path
+- AniZip remains optional and degraded-safe
 
 Debug:
 - `/health`
+- `/debug/catalog`
 - `/debug/anizip/<anilist_id>`

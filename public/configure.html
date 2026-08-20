@@ -18,7 +18,7 @@
 </section>
 
 <section class="statusbar">
-<div class="stat"><small>Version</small><strong id="version">2.1.0</strong></div>
+<div class="stat"><small>Version</small><strong id="version">2.1.1</strong></div>
 <div class="stat"><small>Santé</small><strong id="health">Chargement…</strong></div>
 <div class="stat"><small>AniZip</small><strong id="anizip">Chargement…</strong></div>
 </section>
@@ -74,7 +74,7 @@ function current(){return{
 function urls(c){const enc=b64url(JSON.stringify(c));const path=`/c/${enc}/manifest.json`;return{https:`${location.origin}${path}`,stremio:`stremio://${location.host}${path}`}}
 function apply(c){if(!c)return;for(const id of ["includeSeries","includeMovies","includeONA","includeOVA","includeSpecials","useAniZip","preferEpisodeImages"]){if(typeof c[id]==="boolean")$(id).checked=c[id]}if(["auto","en","romaji","jp"].includes(c.titleLanguage))$("titleLanguage").value=c.titleLanguage;if(["popularity","trending","score","newest"].includes(c.defaultSort))$("defaultSort").value=c.defaultSort;if(Number.isFinite(Number(c.seasonYearsBack)))$("seasonYearsBack").value=String(c.seasonYearsBack)}
 function update(){const u=urls(current());$("url").textContent=u.https;$("install").href=u.stremio}
-async function health(){try{const r=await fetch("/health",{cache:"no-store"});const h=await r.json();$("version").textContent=h.version||"2.1.0";$("health").textContent=h.status||"inconnu";$("health").className=h.status||"";const a=h?.services?.anizip;$("anizip").textContent=a?.status||"inconnu";$("anizip").className=a?.ok?"healthy":(h.status==="degraded"?"degraded":"unhealthy")}catch{$("health").textContent="indisponible";$("health").className="unhealthy";$("anizip").textContent="inconnu"}}
+async function health(){try{const r=await fetch("/health",{cache:"no-store"});const h=await r.json();$("version").textContent=h.version||"2.1.1";$("health").textContent=h.status||"inconnu";$("health").className=h.status||"";const a=h?.services?.anizip;$("anizip").textContent=a?.status||"inconnu";$("anizip").className=a?.ok?"healthy":(h.status==="degraded"?"degraded":"unhealthy")}catch{$("health").textContent="indisponible";$("health").className="unhealthy";$("anizip").textContent="inconnu"}}
 apply(pathConfig());
 ["titleLanguage","includeSeries","includeMovies","includeONA","includeOVA","includeSpecials","seasonYearsBack","defaultSort","useAniZip","preferEpisodeImages"].forEach(id=>$(id).addEventListener("change",update));
 $("copy").addEventListener("click",async()=>{await navigator.clipboard.writeText(urls(current()).https);$("copy").textContent="URL copiée";setTimeout(()=>$("copy").textContent="Copier l’URL",1200)});
