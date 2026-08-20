@@ -333,6 +333,30 @@
         </label>
       </div>
 
+
+      <div class="toggle-row">
+        <div class="toggle-copy">
+          <strong>Catalogues saisonniers</strong>
+          <span>Ajouter Winter, Spring, Summer et Fall par année.</span>
+        </div>
+        <label class="switch">
+          <input id="seasonalCatalogs" type="checkbox" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label for="seasonYearsBack">Historique des saisons</label>
+        <select id="seasonYearsBack">
+          <option value="0">Année courante uniquement</option>
+          <option value="1">1 année précédente</option>
+          <option value="2" selected>2 années précédentes</option>
+          <option value="3">3 années précédentes</option>
+          <option value="4">4 années précédentes</option>
+          <option value="5">5 années précédentes</option>
+        </select>
+      </div>
+
       <div class="actions">
         <a id="installButton" class="button primary" href="#">Installer dans Stremio</a>
         <button id="copyButton" class="button secondary" type="button">Copier l’URL</button>
@@ -360,12 +384,37 @@
         .replace(/=+$/g, "");
     }
 
+    function fromBase64Url(value) {
+      try {
+        const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
+        const binary = atob(padded);
+        const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+        return new TextDecoder().decode(bytes);
+      } catch {
+        return null;
+      }
+    }
+
+    function configFromPath() {
+      const match = location.pathname.match(/^\/c\/([^/]+)\/configure\/?$/);
+      if (!match) return null;
+
+      try {
+        return JSON.parse(fromBase64Url(match[1]));
+      } catch {
+        return null;
+      }
+    }
+
     function currentConfig() {
       return {
         titleLanguage: $("titleLanguage").value,
         includeSeries: $("includeSeries").checked,
         includeMovies: $("includeMovies").checked,
-        showStats: $("showStats").checked
+        showStats: $("showStats").checked,
+        seasonalCatalogs: $("seasonalCatalogs").checked,
+        seasonYearsBack: Number($("seasonYearsBack").value)
       };
     }
 
@@ -383,16 +432,49 @@
       $("installButton").href = stremioUrl;
     }
 
+    function applyConfig(config) {
+      if (!config) return;
+
+      if (["auto", "fr", "en", "romaji", "jp"].includes(config.titleLanguage)) {
+        $("titleLanguage").value = config.titleLanguage;
+      }
+
+      if (typeof config.includeSeries === "boolean") {
+        $("includeSeries").checked = config.includeSeries;
+      }
+
+      if (typeof config.includeMovies === "boolean") {
+        $("includeMovies").checked = config.includeMovies;
+      }
+
+      if (typeof config.showStats === "boolean") {
+        $("showStats").checked = config.showStats;
+      }
+
+      if (typeof config.seasonalCatalogs === "boolean") {
+        $("seasonalCatalogs").checked = config.seasonalCatalogs;
+      }
+
+      if (Number.isFinite(Number(config.seasonYearsBack))) {
+        const value = String(Math.max(0, Math.min(5, Number(config.seasonYearsBack))));
+        $("seasonYearsBack").value = value;
+      }
+    }
+
     const quick = buildUrls({
       titleLanguage: "auto",
       includeSeries: true,
       includeMovies: true,
-      showStats: true
+      showStats: true,
+      seasonalCatalogs: true,
+      seasonYearsBack: 2
     });
 
     $("quickInstall").href = quick.stremioUrl;
 
-    ["titleLanguage", "includeSeries", "includeMovies", "showStats"]
+    applyConfig(configFromPath());
+
+    ["titleLanguage", "includeSeries", "includeMovies", "showStats", "seasonalCatalogs", "seasonYearsBack"]
       .forEach((id) => $(id).addEventListener("change", update));
 
     $("copyButton").addEventListener("click", async () => {
@@ -402,6 +484,18 @@
       $("copyButton").textContent = "URL copiée";
       setTimeout(() => $("copyButton").textContent = old, 1400);
     });
+
+    if (configFromPath()) {
+      document.title = "Hyakanime — Modifier la configuration";
+      const subtitle = document.querySelector(".subtitle");
+      if (subtitle) {
+        subtitle.textContent = "Modifie tes réglages puis réinstalle l’addon pour les appliquer.";
+      }
+      const installButton = $("installButton");
+      if (installButton) {
+        installButton.textContent = "Mettre à jour dans Stremio";
+      }
+    }
 
     update();
   </script>

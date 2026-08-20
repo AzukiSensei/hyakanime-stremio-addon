@@ -1,57 +1,69 @@
 # Hyakanime Stremio Addon
 
-Addon Stremio communautaire non officiel basé sur l'API Hyakanime V5.
+## v1.3.1
 
-## Fonctionnalités
+Architecture hybride :
 
-- Catalogues Séries et Films
-- Recherche Stremio
-- Métadonnées Hyakanime
-- Page de configuration `/configure`
-- Installation rapide via `stremio://`
-- Préférence de langue des titres
-- Activation/désactivation des catalogues
-- Activation/désactivation des statistiques Hyakanime
-- Docker / Dokploy compatible
+- AniList = découverte, saisons, années, affiches, synopsis, genres, nombre d'épisodes
+- Hyakanime = enrichissement complémentaire quand une fiche correspond
+- Stremio = types standards `series` et `movie`
 
-## URLs
+### Catalogues
 
-Une fois déployé :
+L'addon déclare notamment :
 
 ```text
-https://votre-domaine/configure
-https://votre-domaine/manifest.json
-https://votre-domaine/health
+Séries
+Films
+Séries — Winter 2026
+Séries — Spring 2026
+Séries — Summer 2026
+Séries — Fall 2026
+Séries — Winter 2025
+...
 ```
 
-La page de configuration génère des URLs personnalisées :
+Le nombre d'années de saisons visibles est configurable depuis `/configure`.
+
+### Pourquoi ne pas créer un type `hyakanime` ?
+
+Les clients Stremio utilisent surtout les types standards :
 
 ```text
-https://votre-domaine/c/<configuration>/manifest.json
+series
+movie
+channel
+tv
 ```
 
-## Variables d'environnement
+Hyakanime est donc le nom/source de l'addon, tandis que les lignes visibles
+dans Stremio sont des catalogues séparés.
+
+### Variables
 
 ```text
 PORT=7000
 HYAKANIME_API_BASE=https://api-v5.hyakanime.fr
 CACHE_TTL_MS=300000
+ANILIST_CACHE_TTL_MS=300000
 ```
 
-## Déploiement
+### URLs
 
-```bash
-npm install
-npm start
+```text
+/configure
+/manifest.json
+/health
 ```
 
-ou avec Docker :
 
-```bash
-docker build -t hyakanime-stremio .
-docker run -p 7000:7000 hyakanime-stremio
+### Configuration modifiable
+
+Les deux routes sont supportées :
+
+```text
+/configure
+/c/<configuration>/configure
 ```
 
-## Limite
-
-Cet addon fournit `catalog` et `meta`, pas de flux vidéo direct.
+La seconde recharge automatiquement les réglages encodés dans l'URL actuelle.

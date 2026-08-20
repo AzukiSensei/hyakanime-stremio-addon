@@ -1,17 +1,23 @@
 const express = require("express");
 const path = require("path");
 const { addonBuilder, getRouter } = require("stremio-addon-sdk");
+
 const {
   explore,
   getAnime,
-  getAnimeStats,
   API_BASE
 } = require("./hyakanime");
+
 const {
-  normalizeType,
-  parseHyakId,
-  toPreviewMeta,
-  toFullMeta
+  getCatalog: getAniListCatalog,
+  getMedia: getAniListMedia,
+  ANILIST_API
+} = require("./anilist");
+
+const {
+  parseAniListId,
+  aniListToPreviewMeta,
+  aniListToFullMeta
 } = require("./mappers");
 
 const PORT = Number(process.env.PORT || 7000);
@@ -21,11 +27,21 @@ const DEFAULT_CONFIG = Object.freeze({
   titleLanguage: "auto",
   includeSeries: true,
   includeMovies: true,
-  showStats: true
+  showStats: true,
+  seasonalCatalogs: true,
+  seasonYearsBack: 2
 });
+
+const SEASONS = [
+  ["WINTER", "Winter"],
+  ["SPRING", "Spring"],
+  ["SUMMER", "Summer"],
+  ["FALL", "Fall"]
+];
 
 function sanitizeConfig(input = {}) {
   const languages = new Set(["auto", "fr", "en", "romaji", "jp"]);
+  const yearsBack = Number(input.seasonYearsBack);
 
   return {
     titleLanguage: languages.has(input.titleLanguage)
@@ -42,7 +58,15 @@ function sanitizeConfig(input = {}) {
     showStats:
       typeof input.showStats === "boolean"
         ? input.showStats
-        : DEFAULT_CONFIG.showStats
+        : DEFAULT_CONFIG.showStats,
+    seasonalCatalogs:
+      typeof input.seasonalCatalogs === "boolean"
+        ? input.seasonalCatalogs
+        : DEFAULT_CONFIG.seasonalCatalogs,
+    seasonYearsBack:
+      Number.isFinite(yearsBack)
+        ? Math.max(0, Math.min(5, Math.floor(yearsBack)))
+        : DEFAULT_CONFIG.seasonYearsBack
   };
 }
 
@@ -60,16 +84,80 @@ function decodeConfig(value) {
   }
 }
 
+function buildSeasonCatalogs(config) {
+  if (!config.seasonalCatalogs || !config.includeSeries) return [];
+
+  const year = new Date().getUTCFullYear();
+  const catalogs = [];
+
+  // Année courante + années précédentes demandées.
+  for (let y = year; y >= year - config.seasonYearsBack; y -= 1) {
+    for (const [season, label] of SEASONS) {
+      catalogs.push({
+        type: "series",
+        id: `anilist-series-${season.toLowerCase()}-${y}`,
+        name: `Séries — ${label} ${y}`,
+        extra: [
+          { name: "skip", isRequired: false },
+          { name: "search", isRequired: false }
+        ]
+      });
+    }
+  }
+
+  return catalogs;
+}
+
+function parseSeasonCatalogId(id) {
+  const match = /^anilist-series-(winter|spring|summer|fall)-(\d{4})$/.exec(id);
+  if (!match) return null;
+
+  return {
+    season: match[1].toUpperCase(),
+    year: Number(match[2])
+  };
+}
+
+async function findHyakanimeMatch(media) {
+  const candidates = [
+    media?.title?.userPreferred,
+    media?.title?.english,
+    media?.title?.romaji
+  ].filter(Boolean);
+
+  for (const title of candidates) {
+    try {
+      const results = await explore({ search: title, page: 1 });
+      if (!Array.isArray(results)) continue;
+
+      const normalized = String(title).trim().toLowerCase();
+
+      const match = results.find((item) =>
+        [item?.title, item?.titleEN, item?.romanji, item?.titleJP]
+          .filter(Boolean)
+          .some((candidate) => String(candidate).trim().toLowerCase() === normalized)
+      );
+
+      if (match?.id != null) {
+        return await getAnime(match.id);
+      }
+    } catch {
+      // Enrichissement optionnel.
+    }
+  }
+
+  return null;
+}
+
 function buildAddon(configInput = DEFAULT_CONFIG) {
   const config = sanitizeConfig(configInput);
-
   const catalogs = [];
 
   if (config.includeSeries) {
     catalogs.push({
       type: "series",
-      id: "hyakanime-series",
-      name: "Hyakanime — Séries",
+      id: "anilist-series",
+      name: "Séries",
       extra: [
         { name: "search", isRequired: false },
         { name: "skip", isRequired: false }
@@ -80,8 +168,8 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
   if (config.includeMovies) {
     catalogs.push({
       type: "movie",
-      id: "hyakanime-movies",
-      name: "Hyakanime — Films",
+      id: "anilist-movies",
+      name: "Films",
       extra: [
         { name: "search", isRequired: false },
         { name: "skip", isRequired: false }
@@ -89,16 +177,18 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
     });
   }
 
+  catalogs.push(...buildSeasonCatalogs(config));
+
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.1.1",
+    version: "1.3.1",
     name: "Hyakanime",
     description:
-      "Catalogue et métadonnées anime Hyakanime pour Stremio. Addon communautaire non officiel.",
+      "Catalogues anime Stremio alimentés par AniList et enrichis par Hyakanime.",
     logo: "https://cdn-hyakanime.s3.eu-west-3.amazonaws.com/logo-hyakanime.png",
     resources: ["catalog", "meta"],
     types: ["series", "movie"],
-    idPrefixes: ["hyakanime:"],
+    idPrefixes: ["anilist:"],
     catalogs,
     behaviorHints: {
       configurable: true,
@@ -110,21 +200,40 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   builder.defineCatalogHandler(async (args) => {
     try {
-      if (args.type === "series" && !config.includeSeries) return { metas: [] };
-      if (args.type === "movie" && !config.includeMovies) return { metas: [] };
-
-      const search = String(args?.extra?.search || "").trim();
       const skip = Math.max(0, Number(args?.extra?.skip || 0));
-      const page = Math.floor(skip / 20) + 1;
-      const result = await explore({ search, page });
+      const page = Math.floor(skip / 50) + 1;
+      const search = String(args?.extra?.search || "").trim() || undefined;
 
-      if (!Array.isArray(result)) return { metas: [] };
+      let season;
+      let seasonYear;
+      let format;
+
+      if (args.id === "anilist-series") {
+        format = "TV";
+      } else if (args.id === "anilist-movies") {
+        format = "MOVIE";
+      } else {
+        const parsed = parseSeasonCatalogId(args.id);
+        if (!parsed) return { metas: [] };
+        season = parsed.season;
+        seasonYear = parsed.year;
+        format = "TV";
+      }
+
+      const result = await getAniListCatalog({
+        page,
+        perPage: 50,
+        season,
+        seasonYear,
+        format,
+        search,
+        sort: search ? ["SEARCH_MATCH"] : ["POPULARITY_DESC"]
+      });
 
       return {
-        metas: result
-          .filter((anime) => anime?.id != null)
-          .filter((anime) => normalizeType(anime) === args.type)
-          .map((anime) => toPreviewMeta(anime, config))
+        metas: (result?.media || []).map((media) =>
+          aniListToPreviewMeta(media, config)
+        )
       };
     } catch (error) {
       console.error("[catalog]", error);
@@ -133,32 +242,17 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
   });
 
   builder.defineMetaHandler(async (args) => {
-    const animeId = parseHyakId(args.id);
-    if (!animeId) return { meta: null };
+    const mediaId = parseAniListId(args.id);
+    if (!mediaId) return { meta: null };
 
     try {
-      const anime = await getAnime(animeId);
+      const media = await getAniListMedia(mediaId);
+      if (!media) return { meta: null };
 
-      if (!anime || anime.id == null) {
-        return { meta: null };
-      }
-
-      const actualType = normalizeType(anime);
-      if (args.type && actualType !== args.type) {
-        return { meta: null };
-      }
-
-      let stats = null;
-      if (config.showStats) {
-        try {
-          stats = await getAnimeStats(animeId);
-        } catch {
-          // La fiche reste utilisable si les stats ne répondent pas.
-        }
-      }
+      const hyak = await findHyakanimeMatch(media);
 
       return {
-        meta: toFullMeta(anime, stats, config)
+        meta: aniListToFullMeta(media, config, hyak)
       };
     } catch (error) {
       console.error("[meta]", error);
@@ -178,11 +272,11 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     addon: "Hyakanime",
-    api: API_BASE
+    hyakanimeApi: API_BASE,
+    aniListApi: ANILIST_API
   });
 });
 
-// Alias pratique vers la page officielle de configuration.
 app.get("/", (_req, res) => {
   res.redirect("/configure");
 });
@@ -192,13 +286,19 @@ app.get("/configure", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "public", "configure.html"));
 });
 
-// Le router par défaut garde la compatibilité avec /manifest.json.
+// Stremio ouvre la page de configuration relativement à l'URL du manifest.
+// Une installation personnalisée /c/<config>/manifest.json doit donc exposer
+// également /c/<config>/configure.
+app.get("/c/:config/configure", (req, res) => {
+  res.type("html");
+  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
+});
+
 app.use((req, res, next) => {
   if (req.path.startsWith("/c/")) return next();
   return defaultRouter(req, res, next);
 });
 
-// Configuration encodée dans l'URL de l'addon.
 app.use("/c/:config", (req, res, next) => {
   const config = decodeConfig(req.params.config);
   return getRouter(buildAddon(config))(req, res, next);
@@ -207,6 +307,7 @@ app.use("/c/:config", (req, res, next) => {
 app.listen(PORT, "0.0.0.0", () => {
   const defaultConfig = encodeConfig(DEFAULT_CONFIG);
   console.log(`Hyakanime API: ${API_BASE}`);
+  console.log(`AniList API: ${ANILIST_API}`);
   console.log(`Configure: http://127.0.0.1:${PORT}/configure`);
-  console.log(`Default addon: http://127.0.0.1:${PORT}/c/${defaultConfig}/manifest.json`);
+  console.log(`Addon: http://127.0.0.1:${PORT}/c/${defaultConfig}/manifest.json`);
 });

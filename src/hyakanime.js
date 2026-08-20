@@ -6,10 +6,12 @@ const cache = new Map();
 function getCached(key) {
   const entry = cache.get(key);
   if (!entry) return undefined;
+
   if (Date.now() > entry.expiresAt) {
     cache.delete(key);
     return undefined;
   }
+
   return entry.value;
 }
 
@@ -37,7 +39,7 @@ async function apiGet(path, params = {}) {
   const response = await fetch(url, {
     headers: {
       Accept: "application/json",
-      "User-Agent": "Hyakanime-Stremio-Addon/1.0"
+      "User-Agent": "Hyakanime-Stremio-Addon/1.2"
     },
     signal: AbortSignal.timeout(10000)
   });
@@ -57,6 +59,40 @@ async function explore({ search = "", page = 1 } = {}) {
   return apiGet("/explore", { search, page });
 }
 
+async function explorePages({
+  search = "",
+  startPage = 1,
+  maxPages = 10,
+  wanted = 20,
+  predicate = () => true
+} = {}) {
+  const found = [];
+  const seen = new Set();
+
+  for (let page = startPage; page < startPage + maxPages; page += 1) {
+    const result = await explore({ search, page });
+
+    if (!Array.isArray(result) || result.length === 0) {
+      break;
+    }
+
+    for (const anime of result) {
+      if (!anime || anime.id == null || seen.has(anime.id)) continue;
+      seen.add(anime.id);
+
+      if (predicate(anime)) {
+        found.push(anime);
+      }
+
+      if (found.length >= wanted) {
+        return found;
+      }
+    }
+  }
+
+  return found;
+}
+
 async function getAnime(id) {
   return apiGet(`/anime/${encodeURIComponent(String(id))}`);
 }
@@ -68,6 +104,7 @@ async function getAnimeStats(id) {
 module.exports = {
   API_BASE,
   explore,
+  explorePages,
   getAnime,
   getAnimeStats
 };
