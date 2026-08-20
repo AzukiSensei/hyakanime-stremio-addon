@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const { addonBuilder, getRouter } = require("stremio-addon-sdk");
 const {
   explore,
@@ -90,7 +91,7 @@ function buildAddon(configInput = DEFAULT_CONFIG) {
 
   const manifest = {
     id: "fr.hyakanime.catalog",
-    version: "1.1.0",
+    version: "1.1.1",
     name: "Hyakanime",
     description:
       "Catalogue et métadonnées anime Hyakanime pour Stremio. Addon communautaire non officiel.",
@@ -184,6 +185,11 @@ app.get("/health", (_req, res) => {
 // Alias pratique vers la page officielle de configuration.
 app.get("/", (_req, res) => {
   res.redirect("/configure");
+});
+
+app.get("/configure", (_req, res) => {
+  res.type("html");
+  res.sendFile(path.join(process.cwd(), "public", "configure.html"));
 });
 
 // Le router par défaut garde la compatibilité avec /manifest.json.
